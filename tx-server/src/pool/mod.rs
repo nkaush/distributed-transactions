@@ -18,7 +18,8 @@ pub struct ConnectionPool<M> {
     pub group: MulticastGroup<M>,
     pub node_id: NodeId,
     pub from_members: UnboundedReceiver<MemberStateMessage<M>>,
-    pub client_snd_handle: UnboundedSender<MemberStateMessage<M>>
+    pub client_snd_handle: UnboundedSender<MemberStateMessage<M>>,
+    timeout_secs: Option<u64>
 }
 
 
@@ -33,7 +34,8 @@ impl<M> ConnectionPool<M> {
             group: Default::default(),
             node_id,
             from_members: from_clients,
-            client_snd_handle
+            client_snd_handle,
+            timeout_secs: None
         }
     }
 
@@ -74,7 +76,7 @@ impl<M> ConnectionPool<M> {
         });
     }
 
-    async fn priv_connect(mut self, config: &Config) -> Self where M: 'static + Send + Serialize + DeserializeOwned + fmt::Debug {
+    async fn connect_inner(mut self, config: &Config) -> Self where M: 'static + Send + Serialize + DeserializeOwned + fmt::Debug {
         let node_config = config.get(&self.node_id).unwrap();
 
         let bind_addr: SocketAddr = ([0, 0, 0, 0], node_config.port).into();
@@ -134,12 +136,20 @@ impl<M> ConnectionPool<M> {
         } 
     }
 
+    pub fn with_timeout(mut self, seconds: u64) -> Self {
+        self.timeout_secs = Some(seconds);
+        self
+    }
+
     pub async fn connect(self, config: &Config) -> Self where M: 'static + Send + Serialize + DeserializeOwned + fmt::Debug {
-        let time_limit = Duration::from_secs(CONNECTION_POOL_INIT_TIMEOUT_SECS);
-        match timeout(time_limit, self.priv_connect(config)).await {
+        let time_limit = match self.timeout_secs {
+            Some(s) => Duration::from_secs(s),
+            None => Duration::from_secs(CONNECTION_POOL_INIT_TIMEOUT_SECS)
+        };
+        match timeout(time_limit, self.connect_inner(config)).await {
             Ok(p) => p,
             Err(_) => {
-                eprintln!("Failed to connect to all nodes within {}s... Stopping.", CONNECTION_POOL_INIT_TIMEOUT_SECS);
+                eprintln!("Failed to connect to all nodes within {}s... Stopping.", time_limit.as_secs());
                 std::process::exit(1);
             }
         }

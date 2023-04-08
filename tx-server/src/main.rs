@@ -35,6 +35,7 @@ async fn main() {
         }
     };
     let pool = ConnectionPool::<i32>::new(node_id)
+        .with_timeout(10)
         .connect(&config)
         .await;
 }
