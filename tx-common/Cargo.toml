@@ -1,9 +1,8 @@
 [package]
-name = "tx-client"
+name = "tx-common"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-tx-common = { path = "../tx-common" }

@@ -25,7 +25,7 @@ impl NodeConfiguration {
 
 pub type Config = HashMap<NodeId, NodeConfiguration>;
 
-pub fn parse_config(path: &str, given_node_name: char) -> Result<Config, String> {
+pub fn parse_config(path: &str) -> Result<Config, String> {
     let mut config: HashMap<NodeId, NodeConfiguration> = Config::new();
     let mut rdr = match File::open(path) {
         Ok(f) => BufReader::new(f),
@@ -34,7 +34,6 @@ pub fn parse_config(path: &str, given_node_name: char) -> Result<Config, String>
     
     let mut buf = String::new();
     let mut nodes = Vec::new();
-    let mut this_node_id: Option<char> = None;
 
     while let Ok(n) = rdr.read_line(&mut buf) {
         if n == 0 { break }
@@ -51,10 +50,6 @@ pub fn parse_config(path: &str, given_node_name: char) -> Result<Config, String>
 
                     config.insert(node_name, NodeConfiguration::new(node_name, hostname.into(), port, nodes.clone()));
                     nodes.push(node_name);
-
-                    if node_name == given_node_name {
-                        this_node_id = Some(node_name);
-                    }
                 },
                 Err(_) => return Err(format!("Bad config: could not parse port for node with id: {}", n))
             },
@@ -62,10 +57,6 @@ pub fn parse_config(path: &str, given_node_name: char) -> Result<Config, String>
         };
 
         buf.clear();
-    }
-
-    if this_node_id.is_none() {
-        return Err(format!("Bad config: node identifier is not listed in config file"));
     }
 
     Ok(config)

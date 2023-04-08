@@ -1,4 +1,18 @@
-use server::pool::{config::{NodeId, Config, parse_config}, ConnectionPool};
+use tx_common::config::{self, NodeId, Config};
+use tx_server::pool::ConnectionPool;
+
+pub fn parse_config(path: &str, given_node_name: char) -> Result<Config, String> {
+    match config::parse_config(path) {
+        Ok(c) => {
+            if c.contains_key(&given_node_name) {
+                Ok(c)
+            } else {
+                return Err(format!("Bad config: node identifier is not listed in config file"));
+            }
+        },
+        Err(e) => return Err(e)
+    }
+}
 
 #[tokio::main]
 async fn main() {

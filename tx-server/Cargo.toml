@@ -1,5 +1,5 @@
 [package]
-name = "server"
+name = "tx-server"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,6 +9,7 @@ edition = "2021"
 tokio-util = { version = "0.7.4", features = ["codec"] }
 tokio = { version = "1.24", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
+tx-common = { path = "../tx-common" }
 env_logger = "0.10.0"
 tokio-retry = "0.3.0"
 futures = "0.3.12"

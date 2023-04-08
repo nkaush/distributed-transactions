@@ -1,6 +1,4 @@
 pub mod member;
-pub mod config;
-use config::{Config, NodeId};
 
 use member::{member_loop, MulticastMemberData, MulticastMemberHandle, MemberStateMessage};
 use tokio::{
@@ -11,6 +9,7 @@ use tokio::{
 use std::{net::SocketAddr, fmt, time::Duration, collections::HashMap};
 use tokio_retry::{Retry, strategy::FixedInterval};
 use serde::{Serialize, de::DeserializeOwned};
+use tx_common::config::{Config, NodeId};
 use log::{trace, error};
 
 pub type MulticastGroup<M> = HashMap<NodeId, MulticastMemberHandle<M>>;

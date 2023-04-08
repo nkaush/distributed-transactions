@@ -12,8 +12,8 @@ SERVER_EXE = server
 .PHONY: release
 release:
 	cargo build --release
-	mv $(RELEASE_DIR)/$(CLIENT_EXE) $(CLIENT_EXE)
-	mv $(RELEASE_DIR)/$(SERVER_EXE) $(SERVER_EXE)
+	mv $(RELEASE_DIR)/tx-$(CLIENT_EXE) $(CLIENT_EXE)
+	mv $(RELEASE_DIR)/tx-$(SERVER_EXE) $(SERVER_EXE)
 
 clean:
 	cargo clean

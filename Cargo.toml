@@ -1,7 +1,8 @@
 [workspace]
 members = [
     "tx-client",
-    "tx-server"
+    "tx-server",
+    "tx-common"
 ]
 
 [profile.release]
