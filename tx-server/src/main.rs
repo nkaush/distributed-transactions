@@ -1,5 +1,6 @@
 use tx_common::config::{self, NodeId, Config};
 use tx_server::pool::ConnectionPool;
+use log::error;
 
 pub fn parse_config(path: &str, given_node_name: char) -> Result<Config, String> {
     match config::parse_config(path) {
@@ -34,8 +35,13 @@ async fn main() {
             std::process::exit(1);
         }
     };
-    let pool = ConnectionPool::<i32>::new(node_id)
-        .with_timeout(10)
-        .connect(&config)
+    let pool = ConnectionPool::<i32>::new(config, node_id)
+        .await
+        .unwrap_or_else(|e| {
+            error!("Unable to construct connection pool: {e}");
+            std::process::exit(1);
+        })
+        .with_timeout(60)
+        .connect()
         .await;
 }

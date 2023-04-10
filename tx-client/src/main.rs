@@ -1,5 +1,5 @@
 use tx_common::config::{Config, parse_config, NodeConfiguration};
-use rand::{thread_rng, Rng};
+use rand::seq::IteratorRandom;
 use log::info;
 
 fn main() {
@@ -19,9 +19,8 @@ fn main() {
         }
     };
 
-    let coordinator_index = thread_rng().gen::<usize>() % config.len();
-    let coordinator_id = config.keys().nth(coordinator_index).unwrap();
-    let coordinator_cfg: &NodeConfiguration = config.get(coordinator_id).unwrap();
+    let mut rng = rand::thread_rng();
+    let coordinator_cfg: &NodeConfiguration = config.values().choose(&mut rng).unwrap();
 
     info!("Connecting to Node {}...", coordinator_cfg.node_id);
 }

@@ -1,12 +1,10 @@
 use tokio::{
     sync::mpsc::{UnboundedSender, UnboundedReceiver, error::SendError}, 
-    task::JoinHandle, net::TcpStream, select
+    task::JoinHandle, select
 };
 use serde::{de::DeserializeOwned, Serialize};
-use tokio_util::codec::LengthDelimitedCodec;
-use futures::{stream::StreamExt, SinkExt};
-use super::NodeId;
-use log::{trace, error};
+use super::{NodeId, stream::MessageStream};
+use log::trace;
 use std::fmt;
 
 /// Represents any message types a member handler thread could send the transaction engine
@@ -45,6 +43,7 @@ impl<M> Drop for MulticastMemberHandle<M> {
 
 pub(super) struct MulticastMemberData<M> {
     pub member_id: NodeId,
+    pub stream: MessageStream<M>,
     pub to_engine: UnboundedSender<MemberStateMessage<M>>,
     pub from_engine: UnboundedReceiver<M>
 }
@@ -66,30 +65,18 @@ impl<M> MulticastMemberData<M> {
     }
 }
 
-pub(super) async fn member_loop<M>(socket: TcpStream, mut member_data: MulticastMemberData<M>) where M: DeserializeOwned + Serialize + fmt::Debug {
-    let mut stream = LengthDelimitedCodec::builder()
-        .length_field_type::<u32>()
-        .new_framed(socket);
-
+pub(super) async fn member_loop<M>(mut member_data: MulticastMemberData<M>) where M: DeserializeOwned + Serialize + fmt::Debug {
     loop {
         select! {
             Some(to_send) = member_data.from_engine.recv() => {
-                let bytes = bincode::serialize(&to_send).unwrap();
-                if stream.send(bytes.into()).await.is_err() {
+                if member_data.stream.send(to_send).await.is_err() {
                     member_data.notify_network_error().unwrap();
                     break;
                 }
             },
-            received = stream.next() => match received {
-                Some(Ok(bytes)) => {
-                    let msg = match bincode::deserialize(&bytes) {
-                        Ok(m) => MemberStateMessageType::Message(m),
-                        Err(e) => {
-                            error!("deserialize error on client handler {}: {:?}", member_data.member_id, e);
-                            continue
-                        }
-                    };
-                    member_data.notify_client_message(msg).unwrap();
+            received = member_data.stream.recv() => match received {
+                Some(Ok(msg)) => {
+                    member_data.notify_client_message(MemberStateMessageType::Message(msg)).unwrap();
                 },
                 _ => {
                     member_data.notify_network_error().unwrap();
