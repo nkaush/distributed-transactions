@@ -1,44 +1,45 @@
-use tokio::{sync::mpsc::{UnboundedSender, error::SendError, UnboundedReceiver}, net::TcpStream};
 use tokio_util::codec::{Framed, LengthDelimitedCodec};
-use futures::{SinkExt, StreamExt};
 use serde::{de::DeserializeOwned, Serialize};
+use super::pipe::{UnboundedPipe, PipeError};
+use futures::{SinkExt, StreamExt};
+use tokio::net::TcpStream;
 
 pub(super) type FramedStream = Framed<TcpStream, LengthDelimitedCodec>;
 
 #[derive(Debug)]
-pub enum StreamError<T> {
+pub enum StreamError {
     RemoteIoError(std::io::Error),
     BincodeError(Box<bincode::ErrorKind>),
-    LocalSendError(SendError<T>),
+    PipeError(PipeError),
     InvalidRawRecv,
     InvalidRawSend
 }
 
-impl<T> From<SendError<T>> for StreamError<T> {
-    fn from(err: SendError<T>) -> Self {
-        StreamError::LocalSendError(err)
-    }
-}
-
-impl<T> From<std::io::Error> for StreamError<T> {
+impl From<std::io::Error> for StreamError {
     fn from(err: std::io::Error) -> Self {
         StreamError::RemoteIoError(err)
     }
 }
 
-impl<T> From<Box<bincode::ErrorKind>> for StreamError<T> {
+impl From<Box<bincode::ErrorKind>> for StreamError {
     fn from(err: Box<bincode::ErrorKind>) -> Self {
         StreamError::BincodeError(err)
     }
 }
 
-#[derive(Debug)]
-pub enum MessageStream<T> {
-    Remote(FramedStream),
-    Local((UnboundedSender<T>, UnboundedReceiver<T>))
+impl From<PipeError> for StreamError {
+    fn from(err: PipeError) -> Self {
+        StreamError::PipeError(err)
+    }
 }
 
-impl<T> MessageStream<T> {
+#[derive(Debug)]
+pub enum MessageStream<I, O> {
+    Remote(FramedStream),
+    Local(UnboundedPipe<I, O>)
+}
+
+impl<I, O> MessageStream<I, O> {
     pub fn from_tcp_stream(stream: TcpStream) -> Self {
         let stream = LengthDelimitedCodec::builder()
             .length_field_type::<u32>()
@@ -47,21 +48,21 @@ impl<T> MessageStream<T> {
         Self::Remote(stream)
     }
 
-    // pub fn from_local(sender: UnboundedSender<T>) -> Self {
-    //     Self::Local(sender)
-    // }
+    pub fn from_local(sender: UnboundedPipe<I, O>) -> Self {
+        Self::Local(sender)
+    }
 
-    pub async fn send(&mut self, message: T) -> Result<(), StreamError<T>> where T: Serialize {
+    pub async fn send(&mut self, message: O) -> Result<(), StreamError> where O: Serialize {
         match self {
             Self::Remote(stream) => {
                 let bytes = bincode::serialize(&message)?;
                 Ok(stream.send(bytes.into()).await?)
             },
-            Self::Local((sender, _)) => Ok(sender.send(message)?)
+            Self::Local(pipe) => Ok(pipe.send(message)?)
         }
     }
 
-    pub async fn unchecked_send<R>(&mut self, message: R) -> Result<(), StreamError<R>> where R: Serialize {
+    pub async fn untyped_send<R>(&mut self, message: R) -> Result<(), StreamError> where R: Serialize {
         match self {
             Self::Remote(stream) => {
                 let bytes = bincode::serialize(&message)?;
@@ -71,7 +72,7 @@ impl<T> MessageStream<T> {
         }
     }
 
-    pub async fn recv(&mut self) -> Option<Result<T, StreamError<T>>> where T: DeserializeOwned {
+    pub async fn recv(&mut self) -> Option<Result<I, StreamError>> where I: DeserializeOwned {
         match self {
             Self::Remote(stream) => match stream.next().await {
                 Some(Ok(bytes)) => {
@@ -83,11 +84,11 @@ impl<T> MessageStream<T> {
                 Some(Err(e)) => Some(Err(StreamError::RemoteIoError(e))),
                 None => None
             },
-            Self::Local((_, receiver)) => receiver.recv().await.map(|item| Ok(item))
+            Self::Local(pipe) => pipe.recv().await.map(|item| Ok(item))
         }
     }
 
-    pub async fn unchecked_recv<R>(&mut self) -> Option<Result<R, StreamError<R>>> where R: DeserializeOwned {
+    pub async fn untyped_recv<R>(&mut self) -> Option<Result<R, StreamError>> where R: DeserializeOwned {
         match self {
             Self::Remote(stream) => match stream.next().await {
                 Some(Ok(bytes)) => {

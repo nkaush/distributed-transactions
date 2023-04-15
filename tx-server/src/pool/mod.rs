@@ -1,5 +1,6 @@
 pub mod member;
 pub mod stream;
+pub mod pipe;
 
 use member::{member_loop, MulticastMemberData, MulticastMemberHandle, MemberStateMessage};
 use tokio::{
@@ -55,7 +56,7 @@ impl<M> ConnectionPool<M> {
         self
     }
 
-    async fn connect_to_node(this_node: NodeId, node_id: NodeId, host: String, port: u16, stream_snd: UnboundedSender<(MessageStream<M>, NodeId)>) where M: fmt::Debug {
+    async fn connect_to_node(this_node: NodeId, node_id: NodeId, host: String, port: u16, stream_snd: UnboundedSender<(MessageStream<M, M>, NodeId)>) where M: fmt::Debug {
         let server_addr = format!("{host}:{port}");
         trace!("Connecting to {} at {}...", node_id, server_addr);
 
@@ -66,7 +67,7 @@ impl<M> ConnectionPool<M> {
                 let mut stream = MessageStream::from_tcp_stream(stream);
 
                 let handshake = Handshake(this_node);
-                if let Err(e) = stream.unchecked_send(handshake).await {
+                if let Err(e) = stream.untyped_send(handshake).await {
                     error!("Failed to send handshake to Node {node_id}: {e:?}")
                 }
 
@@ -81,7 +82,7 @@ impl<M> ConnectionPool<M> {
         }
     }
 
-    fn admit_member(&mut self, stream: MessageStream<M>, member_id: NodeId) where M: 'static + Send + Serialize + DeserializeOwned + fmt::Debug {
+    pub fn admit_member(&mut self, stream: MessageStream<M, M>, member_id: NodeId) where M: 'static + Send + Serialize + DeserializeOwned + fmt::Debug {
         let (to_client, from_engine) = unbounded_channel();
         let member_data = MulticastMemberData {
             stream,
@@ -119,9 +120,9 @@ impl<M> ConnectionPool<M> {
             select! {
                 client = self.listener.accept() => match client {
                     Ok((stream, _addr)) => {
-                        let mut stream = MessageStream::<M>::from_tcp_stream(stream);
+                        let mut stream = MessageStream::<M, M>::from_tcp_stream(stream);
 
-                        match stream.unchecked_recv::<Handshake>().await {
+                        match stream.untyped_recv::<Handshake>().await {
                             Some(Ok(Handshake(node_id))) => self.admit_member(stream, node_id),
                             Some(Err(e)) => error!("Error on handshake from {_addr}: {e:?}"),
                             None => error!("Failed to receive handshake from {_addr}")

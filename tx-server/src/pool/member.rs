@@ -43,7 +43,7 @@ impl<M> Drop for MulticastMemberHandle<M> {
 
 pub(super) struct MulticastMemberData<M> {
     pub member_id: NodeId,
-    pub stream: MessageStream<M>,
+    pub stream: MessageStream<M, M>,
     pub to_engine: UnboundedSender<MemberStateMessage<M>>,
     pub from_engine: UnboundedReceiver<M>
 }
