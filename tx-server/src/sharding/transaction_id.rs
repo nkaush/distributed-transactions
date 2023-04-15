@@ -1,15 +1,15 @@
 use tx_common::config::NodeId;
 use std::time::SystemTime;
 
-pub trait Id: Copy {
+pub trait Id where Self: Copy {
     fn default(coordinator: NodeId) -> Self;
 }
 
 pub trait IdGen {
-    type Timestamp: Id;
+    type TxId: Id;
 
     fn new(node_id: NodeId) -> Self;
-    fn next(&mut self) -> Self::Timestamp;
+    fn next(&mut self) -> Self::TxId;
 }
 
 #[derive(Clone, Copy, Debug, PartialOrd, Ord, PartialEq, Eq)]
@@ -25,7 +25,8 @@ impl Id for ClockTransactionId {
 }
 
 pub struct ClockTransactionIdGenerator {
-    node_id: NodeId
+    node_id: NodeId,
+    last_systime: u128
 }
 
 impl ClockTransactionIdGenerator {
@@ -38,14 +39,20 @@ impl ClockTransactionIdGenerator {
 }
 
 impl IdGen for ClockTransactionIdGenerator {
-    type Timestamp = ClockTransactionId;
+    type TxId = ClockTransactionId;
 
     fn new(node_id: NodeId) -> Self {
-        Self { node_id }
+        Self { node_id, last_systime: 0 }
     }
 
-    fn next(&mut self) -> Self::Timestamp {
-        Self::Timestamp { ts: Self::get_system_time(), coordinator: self.node_id }
+    fn next(&mut self) -> Self::TxId {
+        let mut ts = Self::get_system_time();
+        if ts == self.last_systime {
+            ts += 1;  
+        }
+        
+        self.last_systime = ts;
+        Self::TxId { ts, coordinator: self.node_id }
     }
 }
 
@@ -67,17 +74,17 @@ pub struct CounterTransactionIdGenerator {
 }
 
 impl IdGen for CounterTransactionIdGenerator {
-    type Timestamp = CounterTransactionId;
+    type TxId = CounterTransactionId;
 
     fn new(node_id: NodeId) -> Self {
         Self { node_id, counter: 0 }
     }
 
-    fn next(&mut self) -> Self::Timestamp {
+    fn next(&mut self) -> Self::TxId {
         self.counter += 1;
-        Self::Timestamp { ts: self.counter, coordinator: self.node_id }
+        Self::TxId { ts: self.counter, coordinator: self.node_id }
     }
 }
 
-pub type TransactionIdGenerator = CounterTransactionIdGenerator;
-pub type TransactionId = <TransactionIdGenerator as IdGen>::Timestamp;
+pub type TransactionIdGenerator = ClockTransactionIdGenerator;
+pub type TransactionId = <TransactionIdGenerator as IdGen>::TxId;
