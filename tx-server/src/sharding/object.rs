@@ -401,7 +401,11 @@ mod test {
 
         // Abort the older transaction
         assert!(object.abort(&tx1).is_ok());
-        
+
+        // Ensure that no updates have been made to the object
+        assert_eq!(object.value, 0);
+        assert_eq!(object.committed_timestamp, Id::default('A'));
+
         // Newer transaction should be able to commit after older transaction
         // was aborted, and the older transaction should not be applied.
         verify_check_commit_success(&object, &tx2);
