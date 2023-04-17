@@ -26,7 +26,8 @@ impl Id for ClockTransactionId {
 
 pub struct ClockTransactionIdGenerator {
     node_id: NodeId,
-    last_systime: u128
+    last_systime: u128,
+    last_count: usize
 }
 
 impl ClockTransactionIdGenerator {
@@ -42,16 +43,18 @@ impl IdGen for ClockTransactionIdGenerator {
     type TxId = ClockTransactionId;
 
     fn new(node_id: NodeId) -> Self {
-        Self { node_id, last_systime: 0 }
+        Self { node_id, last_systime: 0, last_count: 0 }
     }
 
     fn next(&mut self) -> Self::TxId {
         let mut ts = Self::get_system_time();
         if ts == self.last_systime {
-            ts += 1;  
+            self.last_count += 1;
+            ts += self.last_count as u128;
+        } else {
+            self.last_systime = ts;
         }
         
-        self.last_systime = ts;
         Self::TxId { ts, coordinator: self.node_id }
     }
 }
