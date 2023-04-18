@@ -1,7 +1,8 @@
 use tx_common::config::NodeId;
 use std::time::SystemTime;
+use std::hash::Hash;
 
-pub trait Id where Self: Copy {
+pub trait Id where Self: Copy + Hash {
     fn default(coordinator: NodeId) -> Self;
 }
 
@@ -12,7 +13,7 @@ pub trait IdGen {
     fn next(&mut self) -> Self::TxId;
 }
 
-#[derive(Clone, Copy, Debug, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct ClockTransactionId {
     ts: u128,
     coordinator: NodeId
@@ -59,7 +60,7 @@ impl IdGen for ClockTransactionIdGenerator {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialOrd, Ord, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialOrd, Ord, PartialEq, Eq, Hash)]
 pub struct CounterTransactionId {
     ts: usize,
     coordinator: NodeId

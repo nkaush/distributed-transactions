@@ -14,13 +14,14 @@ pub trait Diffable<D>
 where 
     D: Updateable 
 {
-    type ConsistencyCheckError;
+    type ConsistencyCheckError: std::fmt::Debug;
+    
     fn diff(&self, diff: &D) -> Self;
     fn check(self) -> Result<Self, Self::ConsistencyCheckError> where Self: Sized;
 }
 
 #[derive(Debug)]
-pub struct TentativeWrite<D> 
+struct TentativeWrite<D> 
 where 
     D: Updateable 
 {
@@ -71,7 +72,7 @@ pub enum CommitSuccess<T> {
 
 impl<T, D> TimestampedObject<T, D> 
 where 
-    T: Diffable<D>, 
+    T: Clone + Diffable<D>, 
     D: Updateable 
 {
     pub fn new(value: T, owner_id: NodeId) -> Self {
@@ -92,7 +93,7 @@ where
         }
     }
 
-    pub fn read(&mut self, id: &TransactionId) -> Result<T, RWFailure> where T: Clone {
+    pub fn read(&mut self, id: &TransactionId) -> Result<T, RWFailure> {
         if id > &self.committed_timestamp {
             // Get a range of timestamps starting from the committed timestamp
             // to the timestamp of the read request transaction, inclusive
@@ -131,7 +132,7 @@ where
         }
     }
 
-    pub fn write(&mut self, diff: D, id: &TransactionId) -> Result<(), RWFailure> {
+    pub fn write(&mut self, id: &TransactionId, diff: D) -> Result<(), RWFailure> {
         let is_after_mrt = self.read_timestamps
             .iter()
             .next_back()
@@ -183,16 +184,18 @@ where
         }
     }
 
-    pub fn commit(&mut self, id: &TransactionId) -> Result<(), CommitFailure<T::ConsistencyCheckError>> {
+    pub fn commit(&mut self, id: &TransactionId) -> Result<T, CommitFailure<T::ConsistencyCheckError>> {
         self.check_commit(id)
             .map(|success| {
                 if let CommitSuccess::CommitValue(v) = success {
-                    let (ts, _) = self.tentative_writes                    
+                    let (ts, _) = self.tentative_writes
                         .remove_entry(id)
                         .unwrap();
                     self.committed_timestamp = ts;
                     self.value = v;
-                }     
+                }
+
+                self.value.clone()
         })
     }
 
@@ -205,40 +208,11 @@ where
 
 #[cfg(test)]
 mod test {
-    use super::super::transaction_id::*;
+    use crate::sharding::{transaction_id::*, test::SignedDiff};
     use super::*;
 
-    #[derive(Debug)]
-    struct SignedDiff(i64);
-
-    impl Updateable for SignedDiff {
-        fn update(&mut self, other: &Self) {
-            let SignedDiff(inner) = self;
-            let SignedDiff(other) = other;
-
-            *inner += other;
-        }
-    }
-
-    impl Diffable<SignedDiff> for i64 {
-        type ConsistencyCheckError = ();
-        fn diff(&self, diff: &SignedDiff) -> Self { 
-            let SignedDiff(change) = diff;
-            self + change
-        }
-
-        fn check(self) -> Result<Self, Self::ConsistencyCheckError> {
-            if self >= 0 {
-                Ok(self)
-            } else {
-                Err(())
-            }
-        }
-    }
-
     fn verify_check_commit_success(object: &TimestampedObject<i64, SignedDiff>, id: &TransactionId) {
-        let check = object.check_commit(&id);
-        assert!(check.is_ok());
+        assert!(object.check_commit(&id).is_ok());
     }
 
     fn verify_check_commit_failure(object: &TimestampedObject<i64, SignedDiff>, id: &TransactionId, f: CommitFailure<()>) {
@@ -250,6 +224,7 @@ mod test {
     fn verify_commit_success(object: &mut TimestampedObject<i64, SignedDiff>, id: &TransactionId, expected: i64) {
         let commit_res = object.commit(&id);
         assert!(commit_res.is_ok());
+        assert_eq!(commit_res.unwrap(), expected);
         assert_eq!(object.value, expected);
         assert_eq!(&object.committed_timestamp, id);
     }
@@ -274,7 +249,7 @@ mod test {
         let tx = id_gen.next();
 
         // Basic write should be able to write with no conflicting transactions
-        assert!(object.write(SignedDiff(10), &tx).is_ok());
+        assert!(object.write(&tx, SignedDiff(10)).is_ok());
 
         verify_check_commit_success(&object, &tx);
         verify_commit_success(&mut object, &tx, 10);
@@ -287,10 +262,10 @@ mod test {
         let tx = id_gen.next();
 
         // Basic write should be able to write with no conflicting transactions
-        assert!(object.write(SignedDiff(10), &tx).is_ok());
+        assert!(object.write(&tx, SignedDiff(10)).is_ok());
 
         // Basic write should be able to write again with no conflicting transactions
-        assert!(object.write(SignedDiff(20), &tx).is_ok());
+        assert!(object.write(&tx, SignedDiff(20)).is_ok());
 
         verify_check_commit_success(&object, &tx);
         verify_commit_success(&mut object, &tx, 30);
@@ -304,10 +279,10 @@ mod test {
         let tx2 = id_gen.next();
 
         // Older transaction writes first...
-        assert!(object.write(SignedDiff(10), &tx1).is_ok());
+        assert!(object.write(&tx1, SignedDiff(10)).is_ok());
 
         // Newer transaction writes next...
-        assert!(object.write(SignedDiff(20), &tx2).is_ok());
+        assert!(object.write(&tx2, SignedDiff(20)).is_ok());
 
         // Newer transaction must wait for older transaction to commit/abort
         verify_check_commit_failure(&object, &tx2, CommitFailure::WaitFor(tx1));
@@ -330,7 +305,7 @@ mod test {
         let tx2 = id_gen.next();
 
         // Newer write should succeed without any other writes present
-        assert!(object.write(SignedDiff(20), &tx2).is_ok());
+        assert!(object.write(&tx2, SignedDiff(20)).is_ok());
 
         // Newer transaction should be able to commit since no older 
         // transactions have written to this object yet
@@ -339,7 +314,7 @@ mod test {
 
         // Older transaction should not be able to write since a newer 
         // transaction has written and committed a value
-        let write_res = object.write(SignedDiff(10), &tx1);
+        let write_res = object.write(&tx1, SignedDiff(10));
         assert!(write_res.is_err());
         assert_eq!(write_res.unwrap_err(), RWFailure::Abort);
     }
@@ -352,10 +327,10 @@ mod test {
         let tx2 = id_gen.next();
 
         // Newer write should succeed without any other writes present
-        assert!(object.write(SignedDiff(20), &tx2).is_ok());
+        assert!(object.write(&tx2, SignedDiff(20)).is_ok());
 
         // Older write should also succeed.
-        assert!(object.write(SignedDiff(10), &tx1).is_ok());
+        assert!(object.write(&tx1, SignedDiff(10)).is_ok());
 
         // Older transaction should be able to commit
         verify_check_commit_success(&object, &tx1);
@@ -373,10 +348,10 @@ mod test {
         let tx = id_gen.next();
 
         // Basic write should be able to write with no conflicting transactions
-        assert!(object.write(SignedDiff(10), &tx).is_ok());
+        assert!(object.write(&tx, SignedDiff(10)).is_ok());
 
         // Basic write should be able to write again with no conflicting transactions
-        assert!(object.write(SignedDiff(20), &tx).is_ok());
+        assert!(object.write(&tx, SignedDiff(20)).is_ok());
 
         // Abort the transaction
         assert!(object.abort(&tx).is_ok());
@@ -394,10 +369,10 @@ mod test {
         let tx2 = id_gen.next();
 
         // Older transaction writes first...
-        assert!(object.write(SignedDiff(10), &tx1).is_ok());
+        assert!(object.write(&tx1, SignedDiff(10)).is_ok());
 
         // Newer transaction writes next...
-        assert!(object.write(SignedDiff(20), &tx2).is_ok());
+        assert!(object.write(&tx2, SignedDiff(20)).is_ok());
 
         // Abort the older transaction
         assert!(object.abort(&tx1).is_ok());
@@ -419,10 +394,10 @@ mod test {
         let tx = id_gen.next();
 
         // Basic write should be able to write with no conflicting transactions
-        assert!(object.write(SignedDiff(1), &tx).is_ok());
+        assert!(object.write(&tx, SignedDiff(1)).is_ok());
 
         // Another write should be able to write with no conflicting transactions
-        assert!(object.write(SignedDiff(-10), &tx).is_ok());
+        assert!(object.write(&tx, SignedDiff(-10)).is_ok());
 
         verify_check_commit_failure(&object, &tx, CommitFailure::ConsistencyCheckFailed(()));
         verify_commit_failure(&mut object, &tx, CommitFailure::ConsistencyCheckFailed(()));
@@ -436,10 +411,10 @@ mod test {
         let tx2 = id_gen.next();
 
         // Write the diff that will make the consistency check fail
-        assert!(object.write(SignedDiff(-10), &tx1).is_ok());
+        assert!(object.write(&tx1, SignedDiff(-10)).is_ok());
 
         // Different tx makes a write that passes the consistency check
-        assert!(object.write(SignedDiff(10), &tx2).is_ok());
+        assert!(object.write(&tx2, SignedDiff(10)).is_ok());
 
         verify_check_commit_failure(&object, &tx1, CommitFailure::ConsistencyCheckFailed(()));
         verify_commit_failure(&mut object, &tx1, CommitFailure::ConsistencyCheckFailed(()));
@@ -457,7 +432,7 @@ mod test {
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
 
-        assert!(object.write(SignedDiff(10), &tx1).is_ok());
+        assert!(object.write(&tx1, SignedDiff(10)).is_ok());
         verify_check_commit_success(&object, &tx1);
         verify_commit_success(&mut object, &tx1, 10);
 
@@ -474,11 +449,11 @@ mod test {
         let tx2 = id_gen.next();
         let tx3 = id_gen.next();
 
-        assert!(object.write(SignedDiff(10), &tx1).is_ok());
+        assert!(object.write(&tx1, SignedDiff(10)).is_ok());
         verify_check_commit_success(&object, &tx1);
         verify_commit_success(&mut object, &tx1, 10);
 
-        assert!(object.write(SignedDiff(20), &tx3).is_ok());
+        assert!(object.write(&tx3, SignedDiff(20)).is_ok());
 
         let read_res = object.read(&tx2);
         assert!(read_res.is_ok());
@@ -493,11 +468,11 @@ mod test {
         let tx2 = id_gen.next();
         let tx3 = id_gen.next();
 
-        assert!(object.write(SignedDiff(10), &tx1).is_ok());
+        assert!(object.write(&tx1, SignedDiff(10)).is_ok());
         verify_check_commit_success(&object, &tx1);
         verify_commit_success(&mut object, &tx1, 10);
 
-        assert!(object.write(SignedDiff(20), &tx2).is_ok());
+        assert!(object.write(&tx2, SignedDiff(20)).is_ok());
 
         let read_res = object.read(&tx3);
         assert!(read_res.is_err());
@@ -518,7 +493,7 @@ mod test {
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
 
-        assert!(object.write(SignedDiff(10), &tx2).is_ok());
+        assert!(object.write(&tx2, SignedDiff(10)).is_ok());
         verify_check_commit_success(&object, &tx2);
         verify_commit_success(&mut object, &tx2, 10);
 
