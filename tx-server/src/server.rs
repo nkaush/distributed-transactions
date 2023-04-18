@@ -1,35 +1,18 @@
 use crate::sharding::object::{Diffable, Updateable};
 use crate::sharding::shard::Shard;
-use tx_common::Balance;
+use crate::BalanceDiff;
+use tx_common::Amount;
+use tx_common::config::NodeId;
 use std::sync::Arc;
 
-struct BalanceDiff(i64);
-
-impl Updateable for BalanceDiff {
-    fn update(&mut self, other: &Self) {
-        let BalanceDiff(inner) = self;
-        let BalanceDiff(other) = other;
-
-        *inner += other;
-    }
+pub struct Server {
+    shard: Arc<Shard<String, Amount, BalanceDiff>>
 }
 
-impl Diffable<BalanceDiff> for i64 {
-    type ConsistencyCheckError = ();
-    fn diff(&self, diff: &BalanceDiff) -> Self { 
-        let BalanceDiff(change) = diff;
-        self + change
-    }
-
-    fn check(self) -> Result<Self, Self::ConsistencyCheckError> {
-        if self >= 0 {
-            Ok(self)
-        } else {
-            Err(())
+impl Server {
+    pub fn new(node_id: NodeId) -> Self {
+        Self {
+            shard: Arc::new(Shard::new(node_id))
         }
     }
-}
-
-pub struct Server {
-    shard: Arc<Shard<String, Balance, BalanceDiff>>
 }

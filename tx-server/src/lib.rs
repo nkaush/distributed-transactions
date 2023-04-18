@@ -5,10 +5,10 @@ pub mod pool;
 use crate::sharding::object::{Diffable, Updateable};
 
 #[derive(Debug, Clone)]
-pub struct BalanceDiff(tx_common::Balance);
+pub struct BalanceDiff(tx_common::Amount);
 
 #[derive(Debug, Clone)]
-pub struct NegativeBalance(tx_common::Balance);
+pub struct NegativeBalance(tx_common::Amount);
 
 impl Updateable for BalanceDiff {
     fn update(&mut self, other: &Self) {
@@ -19,7 +19,7 @@ impl Updateable for BalanceDiff {
     }
 }
 
-impl Diffable<BalanceDiff> for tx_common::Balance {
+impl Diffable<BalanceDiff> for tx_common::Amount {
     #[cfg(test)]
     type ConsistencyCheckError = ();
 

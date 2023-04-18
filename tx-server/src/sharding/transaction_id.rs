@@ -49,9 +49,9 @@ impl IdGen for ClockTransactionIdGenerator {
 
     fn next(&mut self) -> Self::TxId {
         let mut ts = Self::get_system_time();
-        if ts == self.last_systime {
+        if ts <= self.last_systime {
             self.last_count += 1;
-            ts += self.last_count as u128;
+            ts = self.last_systime + self.last_count as u128;
         } else {
             self.last_systime = ts;
         }

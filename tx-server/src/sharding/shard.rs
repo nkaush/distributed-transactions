@@ -174,7 +174,7 @@ mod test {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    async fn verify_commit(shard: &Arc<Shard::<i32, i64, BalanceDiff>>, object: i32, id: &TransactionId, expected: i64) {
+    async fn verify_commit(shard: &Arc<Shard<i32, i64, BalanceDiff>>, object: i32, id: &TransactionId, expected: i64) {
         assert!(shard.check_commit(&id, object).await.is_ok());
         let commit_res = shard.commit(&id, object).await;
         assert!(commit_res.is_ok());
@@ -184,7 +184,7 @@ mod test {
     #[tokio::test]
     async fn test_basic_write_stall() {
         init();
-        let shard: Arc<Shard::<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
+        let shard: Arc<Shard<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -211,7 +211,7 @@ mod test {
     #[tokio::test]
     async fn test_aborted_write_stall() {
         init();
-        let shard: Arc<Shard::<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
+        let shard: Arc<Shard<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -239,7 +239,7 @@ mod test {
     #[tokio::test]
     async fn test_read_after_non_committed_write() {
         init();
-        let shard: Arc<Shard::<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
+        let shard: Arc<Shard<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
