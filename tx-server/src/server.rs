@@ -1,14 +1,9 @@
-pub mod sharding;
-pub mod server;
-pub mod pool;
-
 use crate::sharding::object::{Diffable, Updateable};
+use crate::sharding::shard::Shard;
+use tx_common::Balance;
+use std::sync::Arc;
 
-#[derive(Debug, Clone)]
-pub struct BalanceDiff(tx_common::Balance);
-
-#[derive(Debug, Clone)]
-pub struct NegativeBalance(tx_common::Balance);
+struct BalanceDiff(i64);
 
 impl Updateable for BalanceDiff {
     fn update(&mut self, other: &Self) {
@@ -19,19 +14,13 @@ impl Updateable for BalanceDiff {
     }
 }
 
-impl Diffable<BalanceDiff> for tx_common::Balance {
-    #[cfg(test)]
+impl Diffable<BalanceDiff> for i64 {
     type ConsistencyCheckError = ();
-
-    #[cfg(not(test))]
-    type ConsistencyCheckError = NegativeBalance;
-
     fn diff(&self, diff: &BalanceDiff) -> Self { 
         let BalanceDiff(change) = diff;
         self + change
     }
 
-    #[cfg(test)]
     fn check(self) -> Result<Self, Self::ConsistencyCheckError> {
         if self >= 0 {
             Ok(self)
@@ -39,13 +28,8 @@ impl Diffable<BalanceDiff> for tx_common::Balance {
             Err(())
         }
     }
+}
 
-    #[cfg(not(test))]
-    fn check(self) -> Result<Self, Self::ConsistencyCheckError> {
-        if self >= 0 {
-            Ok(self)
-        } else {
-            Err(NegativeBalance(self))
-        }
-    }
+pub struct Server {
+    shard: Arc<Shard<String, Balance, BalanceDiff>>
 }

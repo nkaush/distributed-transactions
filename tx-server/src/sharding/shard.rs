@@ -164,16 +164,17 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::sharding::{transaction_id::*, test::SignedDiff};
+    use crate::sharding::{transaction_id::*};
     use std::time::{Duration, Instant};
     use tokio::time::sleep;
+    use crate::BalanceDiff;
     use super::*;
 
     fn init() {
         let _ = env_logger::builder().is_test(true).try_init();
     }
 
-    async fn verify_commit(shard: &Arc<Shard::<i32, i64, SignedDiff>>, object: i32, id: &TransactionId, expected: i64) {
+    async fn verify_commit(shard: &Arc<Shard::<i32, i64, BalanceDiff>>, object: i32, id: &TransactionId, expected: i64) {
         assert!(shard.check_commit(&id, object).await.is_ok());
         let commit_res = shard.commit(&id, object).await;
         assert!(commit_res.is_ok());
@@ -183,13 +184,13 @@ mod test {
     #[tokio::test]
     async fn test_basic_write_stall() {
         init();
-        let shard: Arc<Shard::<i32, i64, SignedDiff>> = Arc::new(Shard::new('A'));
+        let shard: Arc<Shard::<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
 
-        assert!(shard.write(&tx1, 1, SignedDiff(10)).await.is_ok());
-        assert!(shard.write(&tx2, 1, SignedDiff(20)).await.is_ok());
+        assert!(shard.write(&tx1, 1, BalanceDiff(10)).await.is_ok());
+        assert!(shard.write(&tx2, 1, BalanceDiff(20)).await.is_ok());
 
         let shard_clone2 = shard.clone();
         let join_tx2 = tokio::spawn(async move {
@@ -210,13 +211,13 @@ mod test {
     #[tokio::test]
     async fn test_aborted_write_stall() {
         init();
-        let shard: Arc<Shard::<i32, i64, SignedDiff>> = Arc::new(Shard::new('A'));
+        let shard: Arc<Shard::<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
 
-        assert!(shard.write(&tx1, 1, SignedDiff(-10)).await.is_ok());
-        assert!(shard.write(&tx2, 1, SignedDiff(20)).await.is_ok());
+        assert!(shard.write(&tx1, 1, BalanceDiff(-10)).await.is_ok());
+        assert!(shard.write(&tx2, 1, BalanceDiff(20)).await.is_ok());
 
         let shard_clone2 = shard.clone();
         let join_tx2 = tokio::spawn(async move {
@@ -238,16 +239,16 @@ mod test {
     #[tokio::test]
     async fn test_read_after_non_committed_write() {
         init();
-        let shard: Arc<Shard::<i32, i64, SignedDiff>> = Arc::new(Shard::new('A'));
+        let shard: Arc<Shard::<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
         let tx3 = id_gen.next();
 
-        assert!(shard.write(&tx1, 1, SignedDiff(10)).await.is_ok());
+        assert!(shard.write(&tx1, 1, BalanceDiff(10)).await.is_ok());
         verify_commit(&shard, 1, &tx1, 10).await;
 
-        assert!(shard.write(&tx2, 1, SignedDiff(20)).await.is_ok());
+        assert!(shard.write(&tx2, 1, BalanceDiff(20)).await.is_ok());
 
         let shard_clone3 = shard.clone();
         let join_tx3 = tokio::spawn(async move {

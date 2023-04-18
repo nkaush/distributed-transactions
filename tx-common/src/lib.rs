@@ -1,6 +1,8 @@
 pub mod config;
 
+pub type Balance = i64;
+
 pub enum BankTransaction {
-    Deposit(i64),
-    Withdraw(i64)
+    Deposit(Balance),
+    Withdraw(Balance)
 }
