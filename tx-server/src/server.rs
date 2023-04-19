@@ -1,8 +1,6 @@
-use crate::sharding::object::{Diffable, Updateable};
-use crate::sharding::shard::Shard;
+use crate::sharding::{object::{Diffable, Updateable}, shard::Shard};
+use tx_common::{Amount, config::NodeId};
 use crate::BalanceDiff;
-use tx_common::Amount;
-use tx_common::config::NodeId;
 use std::sync::Arc;
 
 pub struct Server {

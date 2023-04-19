@@ -1,5 +1,5 @@
-use tx_common::config::{self, NodeId, Config};
 use tx_server::pool::{ConnectionPool, pipe::unbounded_pipe, stream::MessageStream};
+use tx_common::config::{self, NodeId, Config};
 use log::error;
 
 pub fn parse_config(path: &str, given_node_name: char) -> Result<Config, String> {

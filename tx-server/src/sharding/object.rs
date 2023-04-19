@@ -14,7 +14,7 @@ pub trait Diffable<D>
 where 
     D: Updateable 
 {
-    type ConsistencyCheckError: std::fmt::Debug;
+    type ConsistencyCheckError: std::fmt::Debug + Send;
     
     fn diff(&self, diff: &D) -> Self;
     fn check(self) -> Result<Self, Self::ConsistencyCheckError> where Self: Sized;
@@ -65,7 +65,7 @@ pub enum CommitFailure<E> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub enum CommitSuccess<T> {
+pub enum CheckCommitSuccess<T> {
     CommitValue(T),
     NothingToCommit
 }
@@ -100,17 +100,25 @@ where
             let ts_range = (Excluded(self.committed_timestamp), Included(*id));
 
             // Get the final timestamp of the range such that we have the 
-            // version of the obkect with the maximum write timestamp less than 
+            // version of the object with the maximum write timestamp less than 
             // or equal to the requested read timestamp
             let mut tw_range = self.tentative_writes.range(ts_range);
             let ts_lte_id = tw_range.next_back();
 
             match ts_lte_id {
                 None => { 
-                    // if the timestamp we found is the committed timestamp
-                    // read Ds and add Tc to RTS list (if not already added)
-                    self.read_timestamps.insert(*id);
-                    Ok(self.value.clone())
+                    // There have been no commits, the requesting transaction 
+                    // has not performed a tentative write, and there were no
+                    // transactions older than this one that DID write that we 
+                    // can wait on... so abort
+                    if self.committed_timestamp.is_default() {
+                        Err(RWFailure::Abort)
+                    } else {
+                        // if the timestamp we found is the committed timestamp
+                        // read Ds and add Tc to RTS list (if not already added)
+                        self.read_timestamps.insert(*id);
+                        Ok(self.value.clone())
+                    }
                 },
                 Some((ts, tw)) => {
                     if ts == id { // if Ds was written by Tc, simply read Ds
@@ -158,9 +166,9 @@ where
         }
     }
 
-    pub fn check_commit(&self, id: &TransactionId) -> Result<CommitSuccess<T>, CommitFailure<T::ConsistencyCheckError>> {
+    pub fn check_commit(&self, id: &TransactionId) -> Result<CheckCommitSuccess<T>, CommitFailure<T::ConsistencyCheckError>> {
         if !self.tentative_writes.contains_key(id) {
-            return Ok(CommitSuccess::NothingToCommit);
+            return Ok(CheckCommitSuccess::NothingToCommit);
         }
         
         match self.tentative_writes.keys().next() {
@@ -174,7 +182,7 @@ where
                     self.value
                         .diff(&tw.diff)
                         .check()
-                        .map(|v| CommitSuccess::CommitValue(v))
+                        .map(|v| CheckCommitSuccess::CommitValue(v))
                         .map_err(|e| CommitFailure::ConsistencyCheckFailed(e))
                 } else {
                     Err(CommitFailure::WaitFor(*first))
@@ -187,7 +195,7 @@ where
     pub fn commit(&mut self, id: &TransactionId) -> Result<T, CommitFailure<T::ConsistencyCheckError>> {
         self.check_commit(id)
             .map(|success| {
-                if let CommitSuccess::CommitValue(v) = success {
+                if let CheckCommitSuccess::CommitValue(v) = success {
                     let (ts, _) = self.tentative_writes
                         .remove_entry(id)
                         .unwrap();
@@ -197,6 +205,14 @@ where
 
                 self.value.clone()
         })
+    }
+
+    pub fn can_reap(&self, aborting_id: &TransactionId) -> bool {
+        let only_violation = self.tentative_writes.len() == 1 
+            && self.tentative_writes.contains_key(aborting_id);
+        
+        self.committed_timestamp.is_default() 
+            && (self.tentative_writes.is_empty() || only_violation)
     }
 
     pub fn abort(&mut self, id: &TransactionId) -> Result<(), Infallible> {
@@ -241,6 +257,12 @@ mod test {
         // Ensure that the object's committed value was not changed
         assert_eq!(object.value, original_value);
         assert_eq!(object.committed_timestamp, original_cts);
+    }
+
+    fn verify_read(object: &mut TimestampedObject<i64, BalanceDiff>, id: &TransactionId, expected: i64) {
+        let read_res = object.read(&id);
+        assert!(read_res.is_ok());
+        assert_eq!(read_res.unwrap(), expected);
     }
 
     #[test]
@@ -437,9 +459,7 @@ mod test {
         verify_check_commit_success(&object, &tx1);
         verify_commit_success(&mut object, &tx1, 10);
 
-        let read_res = object.read(&tx2);
-        assert!(read_res.is_ok());
-        assert_eq!(read_res.unwrap(), 10);
+        verify_read(&mut object, &tx2, 10);
     }
 
     #[test]
@@ -455,10 +475,7 @@ mod test {
         verify_commit_success(&mut object, &tx1, 10);
 
         assert!(object.write(&tx3, BalanceDiff(20)).is_ok());
-
-        let read_res = object.read(&tx2);
-        assert!(read_res.is_ok());
-        assert_eq!(read_res.unwrap(), 10);
+        verify_read(&mut object, &tx2, 10);
     }
 
     #[test]
@@ -482,9 +499,7 @@ mod test {
         verify_check_commit_success(&object, &tx2);
         verify_commit_success(&mut object, &tx2, 30);
 
-        let read_res = object.read(&tx3);
-        assert!(read_res.is_ok());
-        assert_eq!(read_res.unwrap(), 30);
+        verify_read(&mut object, &tx3, 30);
     }
 
     #[test]
@@ -497,6 +512,85 @@ mod test {
         assert!(object.write(&tx2, BalanceDiff(10)).is_ok());
         verify_check_commit_success(&object, &tx2);
         verify_commit_success(&mut object, &tx2, 10);
+
+        let read_res = object.read(&tx1);
+        assert!(read_res.is_err());
+        assert_eq!(read_res.unwrap_err(), RWFailure::Abort);
+    }
+
+    #[test]
+    fn test_read_after_write_on_same_tx() {
+        let mut object = TimestampedObject::new(0, 'A');
+        let mut id_gen = TransactionIdGenerator::new('B');
+        let tx = id_gen.next();
+
+        assert!(object.write(&tx, BalanceDiff(10)).is_ok());
+        verify_read(&mut object, &tx, 10);
+        assert!(object.write(&tx, BalanceDiff(50)).is_ok());
+        verify_read(&mut object, &tx, 60);
+
+        verify_check_commit_success(&object, &tx);
+        verify_commit_success(&mut object, &tx, 60);
+    }
+
+    #[test]
+    fn test_read_after_write_on_same_tx_multiple_tx() {
+        let mut object = TimestampedObject::new(0, 'A');
+        let mut id_gen = TransactionIdGenerator::new('B');
+        let tx1 = id_gen.next();
+        let tx2 = id_gen.next();
+
+        assert!(object.write(&tx2, BalanceDiff(20)).is_ok());
+        assert!(object.write(&tx1, BalanceDiff(10)).is_ok());
+
+        verify_read(&mut object, &tx1, 10);
+        verify_read(&mut object, &tx2, 20);
+
+        verify_check_commit_success(&object, &tx1);
+        verify_commit_success(&mut object, &tx1, 10);
+
+        verify_check_commit_success(&object, &tx2);
+        verify_commit_success(&mut object, &tx2, 30);
+    }
+
+    #[test]
+    fn test_read_after_commit_on_different_tx() {
+        let mut object = TimestampedObject::new(0, 'A');
+        let mut id_gen = TransactionIdGenerator::new('B');
+        let tx1 = id_gen.next();
+        let tx2 = id_gen.next();
+
+        assert!(object.write(&tx2, BalanceDiff(20)).is_ok());
+        assert!(object.write(&tx1, BalanceDiff(10)).is_ok());
+
+        verify_read(&mut object, &tx1, 10);
+        verify_check_commit_success(&object, &tx1);
+        verify_commit_success(&mut object, &tx1, 10);
+
+        verify_read(&mut object, &tx2, 30);
+        verify_check_commit_success(&object, &tx2);
+        verify_commit_success(&mut object, &tx2, 30);
+    }
+
+    #[test]
+    fn test_read_created_object() {
+        let mut object = TimestampedObject::new(0, 'A');
+        let mut id_gen = TransactionIdGenerator::new('B');
+        let tx = id_gen.next();
+
+        let read_res = object.read(&tx);
+        assert!(read_res.is_err());
+        assert_eq!(read_res.unwrap_err(), RWFailure::Abort);
+    }
+
+    #[test]
+    fn test_read_on_unwritten_object() {
+        let mut object = TimestampedObject::new(0, 'A');
+        let mut id_gen = TransactionIdGenerator::new('B');
+        let tx1 = id_gen.next();
+        let tx2 = id_gen.next();
+
+        assert!(object.write(&tx2, BalanceDiff(20)).is_ok());
 
         let read_res = object.read(&tx1);
         assert!(read_res.is_err());

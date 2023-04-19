@@ -12,6 +12,7 @@ serde = { version = "1", features = ["derive"] }
 tx-common = { path = "../tx-common" }
 env_logger = "0.10.0"
 tokio-retry = "0.3.0"
+test-log = "0.2.11"
 futures = "0.3.12"
 bincode = "1.3.3"
 log = "0.4.17"
