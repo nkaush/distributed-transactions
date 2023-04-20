@@ -3,69 +3,70 @@ use tokio::{
     task::JoinHandle, select
 };
 use serde::{de::DeserializeOwned, Serialize};
-use super::{NodeId, stream::MessageStream};
+use crate::utils::MessageStream;
+use super::NodeId;
 use log::trace;
 use std::fmt;
 
 /// Represents any message types a member handler thread could send the transaction engine
 #[derive(Debug)]
-pub enum MemberStateMessageType<M> {
+pub enum ServerStateMessageType<M> {
     Message(M),
-    NetworkError
+    Disconnected
 }
 
 /// Represents any messages a member handler thread could send the multicast engine.
 #[derive(Debug)]
-pub struct MemberStateMessage<M> {
-    pub msg: MemberStateMessageType<M>,
+pub struct ServerStateMessage<I> {
+    pub msg: ServerStateMessageType<I>,
     pub member_id: NodeId
 }
 
 /// The handle that the multicast engine has for each member handler thread.
-pub struct MulticastMemberHandle<M> {
+pub struct RemoteServerHandle<O> {
     pub member_id: NodeId,
-    pub to_client: UnboundedSender<M>,
+    pub to_client: UnboundedSender<O>,
     pub handle: JoinHandle<()>
 }
 
-impl<M> MulticastMemberHandle<M> {
+impl<M> RemoteServerHandle<M> {
     pub fn pass_message(&self, msg: M) -> Result<(), SendError<M>> {
         self.to_client.send(msg)
     }
 }
 
-impl<M> Drop for MulticastMemberHandle<M> {
+impl<M> Drop for RemoteServerHandle<M> {
     fn drop(&mut self) {
         trace!("Aborting client thread for {}", self.member_id);
         self.handle.abort()
     }
 }
 
-pub(super) struct MulticastMemberData<M> {
+pub(super) struct RemoteServerData<I, O> {
     pub member_id: NodeId,
-    pub stream: MessageStream<M, M>,
-    pub to_engine: UnboundedSender<MemberStateMessage<M>>,
-    pub from_engine: UnboundedReceiver<M>
+    pub stream: MessageStream,
+    pub to_engine: UnboundedSender<ServerStateMessage<I>>,
+    pub from_engine: UnboundedReceiver<O>
 }
 
-impl<M> MulticastMemberData<M> {
-    fn generate_state_msg(&self, msg: MemberStateMessageType<M>) -> MemberStateMessage<M> {
-        MemberStateMessage {
+impl<I, O> RemoteServerData<I, O> {
+    fn generate_state_msg(&self, msg: ServerStateMessageType<I>) -> ServerStateMessage<I> {
+        ServerStateMessage {
             msg,
             member_id: self.member_id
         }
     }
     
-    fn notify_client_message(&mut self, msg: MemberStateMessageType<M>) -> Result<(), SendError<MemberStateMessage<M>>> {
+    fn notify_client_message(&mut self, msg: ServerStateMessageType<I>) -> Result<(), SendError<ServerStateMessage<I>>> {
         self.to_engine.send(self.generate_state_msg(msg))
     }
 
-    fn notify_network_error(&mut self) -> Result<(), SendError<MemberStateMessage<M>>> {
-        self.to_engine.send(self.generate_state_msg(MemberStateMessageType::NetworkError))
+    fn notify_network_error(&mut self) -> Result<(), SendError<ServerStateMessage<I>>> {
+        self.to_engine.send(self.generate_state_msg(ServerStateMessageType::Disconnected))
     }
 }
 
-pub(super) async fn member_loop<M>(mut member_data: MulticastMemberData<M>) where M: DeserializeOwned + Serialize + fmt::Debug {
+pub(super) async fn member_loop<I, O>(mut member_data: RemoteServerData<I, O>) where I: DeserializeOwned + fmt::Debug, O: Serialize {
     loop {
         select! {
             Some(to_send) = member_data.from_engine.recv() => {
@@ -76,7 +77,7 @@ pub(super) async fn member_loop<M>(mut member_data: MulticastMemberData<M>) wher
             },
             received = member_data.stream.recv() => match received {
                 Some(Ok(msg)) => {
-                    member_data.notify_client_message(MemberStateMessageType::Message(msg)).unwrap();
+                    member_data.notify_client_message(ServerStateMessageType::Message(msg)).unwrap();
                 },
                 _ => {
                     member_data.notify_network_error().unwrap();

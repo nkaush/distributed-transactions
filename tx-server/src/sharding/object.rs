@@ -4,21 +4,8 @@ use std::{
     convert::Infallible
 };
 use super::transaction_id::{Id, TransactionId};
+use super::{Diffable, Updateable};
 use tx_common::config::NodeId;
-
-pub trait Updateable {
-    fn update(&mut self, other: &Self);
-}
-
-pub trait Diffable<D> 
-where 
-    D: Updateable 
-{
-    type ConsistencyCheckError: std::fmt::Debug + Send;
-    
-    fn diff(&self, diff: &D) -> Self;
-    fn check(self) -> Result<Self, Self::ConsistencyCheckError> where Self: Sized;
-}
 
 #[derive(Debug)]
 struct TentativeWrite<D> 
@@ -217,6 +204,7 @@ where
 
     pub fn abort(&mut self, id: &TransactionId) -> Result<(), Infallible> {
         self.tentative_writes.remove(id);
+        self.read_timestamps.remove(id); // TODO confirm we need this
 
         Ok(())
     }
@@ -287,8 +275,11 @@ mod test {
         // Basic write should be able to write with no conflicting transactions
         assert!(object.write(&tx, BalanceDiff(10)).is_ok());
 
+        // Basic write that takes balance negative should succeed 
+        assert!(object.write(&tx, BalanceDiff(-20)).is_ok());
+
         // Basic write should be able to write again with no conflicting transactions
-        assert!(object.write(&tx, BalanceDiff(20)).is_ok());
+        assert!(object.write(&tx, BalanceDiff(40)).is_ok());
 
         verify_check_commit_success(&object, &tx);
         verify_commit_success(&mut object, &tx, 30);
@@ -439,11 +430,13 @@ mod test {
         // Different tx makes a write that passes the consistency check
         assert!(object.write(&tx2, BalanceDiff(10)).is_ok());
 
+        // The consistency check on the bad transaction should fail
         verify_check_commit_failure(&object, &tx1, CommitFailure::ConsistencyCheckFailed(()));
         verify_commit_failure(&mut object, &tx1, CommitFailure::ConsistencyCheckFailed(()));
 
         assert!(object.abort(&tx1).is_ok());
 
+        // The consistency check on the next transaction will succeed
         verify_check_commit_success(&object, &tx2);
         verify_commit_success(&mut object, &tx2, 10);
     }

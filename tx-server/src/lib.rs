@@ -1,11 +1,10 @@
 pub mod sharding;
+pub mod utils;
 pub mod server;
 pub mod pool;
 
-use crate::sharding::object::{Diffable, Updateable};
-
-#[derive(Debug, Clone)]
-pub struct BalanceDiff(tx_common::Amount);
+use crate::sharding::{Diffable, Updateable};
+pub use tx_common::BalanceDiff;
 
 #[derive(Debug, Clone)]
 pub struct NegativeBalance(tx_common::Amount);

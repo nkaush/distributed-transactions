@@ -1,5 +1,5 @@
-use tx_server::pool::{ConnectionPool, pipe::unbounded_pipe, stream::MessageStream};
-use tx_common::config::{self, NodeId, Config};
+use tx_server::pool::ConnectionPool;
+use tx_common::{config::{self, NodeId, Config}, ClientRequest, ClientResponse};
 use log::error;
 
 pub fn parse_config(path: &str, given_node_name: char) -> Result<Config, String> {
@@ -35,19 +35,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             std::process::exit(1);
         }
     };
-    let (send, rcv) = unbounded_pipe();
-    let stream = MessageStream::from_local(send);
-
-    let mut this = ConnectionPool::<i32>::new(config, node_id)
-        .await
-        .unwrap_or_else(|e| {
-            error!("Unable to construct connection pool: {e}");
-            std::process::exit(1);
-        })
-        .connect()
-        .await;
-
-    this.admit_member(stream, node_id);
 
     Ok(())
 }
