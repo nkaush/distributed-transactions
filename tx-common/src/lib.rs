@@ -35,6 +35,20 @@ impl ClientResponse {
     pub fn is_ok(&self) -> bool {
         !matches!(self, Self::Aborted | Self::AbortedNotFound)
     }
+
+    pub fn is_final(&self) -> bool {
+        matches!(self, Self::CommitOk | Self::Aborted | Self::AbortedNotFound)
+    }
+
+    pub fn print(&self) {
+        match self {
+            Self::Ok => println!("OK"),
+            Self::Value(account_id, balance) => println!("{account_id} = {balance}"),
+            Self::CommitOk => println!("COMMIT OK"),
+            Self::Aborted => println!("ABORTED"),
+            Self::AbortedNotFound => println!("NOT FOUND, ABORTED")
+        }
+    }
 }
 
 #[cfg(test)]

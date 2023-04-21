@@ -99,12 +99,9 @@ async fn main() {
             }
         };
 
-        match response {
-            ClientResponse::Ok => println!("OK"),
-            ClientResponse::Value(account_id, balance) => println!("{account_id} = {balance}"),
-            ClientResponse::CommitOk => println!("COMMIT OK"),
-            ClientResponse::Aborted => println!("ABORTED"),
-            ClientResponse::AbortedNotFound => println!("NOT FOUND, ABORTED")
+        response.print();
+        if response.is_final() {
+            break;
         }
         
         buffer.clear();
