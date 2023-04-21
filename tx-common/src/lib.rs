@@ -12,8 +12,8 @@ pub struct BalanceDiff(pub Amount);
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum ClientRequest {
-    BalanceChange(AccountId, BalanceDiff),
-    Balance(AccountId),
+    WriteBalance(AccountId, BalanceDiff),
+    ReadBalance(AccountId),
     Commit,
     Abort
 }
@@ -40,13 +40,13 @@ impl ClientResponse {
         matches!(self, Self::CommitOk | Self::Aborted | Self::AbortedNotFound)
     }
 
-    pub fn print(&self) {
+    pub fn format(&self) -> String {
         match self {
-            Self::Ok => println!("OK"),
-            Self::Value(account_id, balance) => println!("{account_id} = {balance}"),
-            Self::CommitOk => println!("COMMIT OK"),
-            Self::Aborted => println!("ABORTED"),
-            Self::AbortedNotFound => println!("NOT FOUND, ABORTED")
+            Self::Ok => format!("OK"),
+            Self::Value(account_id, balance) => format!("{account_id} = {balance}"),
+            Self::CommitOk => format!("COMMIT OK"),
+            Self::Aborted => format!("ABORTED"),
+            Self::AbortedNotFound => format!("NOT FOUND, ABORTED")
         }
     }
 }

@@ -177,7 +177,7 @@ impl Client {
                 let state = ClientState::Forward(
                     ForwardTarget::Node(shard_id), 
                     self.transaction_id, 
-                    ClientRequest::BalanceChange(account_id, diff)
+                    ClientRequest::WriteBalance(account_id, diff)
                 );
 
                 if let Err(_) = self.forward_snd.send(state) {
@@ -225,7 +225,7 @@ impl Client {
                 let state = ClientState::Forward(
                     ForwardTarget::Node(shard_id), 
                     self.transaction_id, 
-                    ClientRequest::Balance(account_id)
+                    ClientRequest::ReadBalance(account_id)
                 );
 
                 if let Err(_) = self.forward_snd.send(state) {
@@ -335,12 +335,12 @@ impl Client {
         while let Some(Ok(request)) = self.stream.recv::<ClientRequest>().await {
             info!("Client({}) handling {request:?}", self.transaction_id);
             match request {
-                ClientRequest::BalanceChange(account_id, diff) => {
+                ClientRequest::WriteBalance(account_id, diff) => {
                     if self.handle_balance_change(account_id, diff).await.is_err() {
                         break;
                     }
                 },
-                ClientRequest::Balance(account_id) => {
+                ClientRequest::ReadBalance(account_id) => {
                     if self.handle_balance(account_id).await.is_err() {
                         break;
                     }
@@ -470,7 +470,7 @@ impl Server {
         let shard_id = self.node_id;
         tokio::spawn(async move {
             let fwd_resp: Forwarded = match request {
-                ClientRequest::BalanceChange(account_id, diff) => {
+                ClientRequest::WriteBalance(account_id, diff) => {
                     let resp = match shard.write(&tx_id, account_id, diff).await {
                         Ok(_) => ClientResponse::Ok,
                         Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,
@@ -479,7 +479,7 @@ impl Server {
 
                     Response(tx_id, resp)
                 },
-                ClientRequest::Balance(account_id) => {
+                ClientRequest::ReadBalance(account_id) => {
                     let resp = match shard.read(&tx_id, &account_id).await {
                         Ok(value) => ClientResponse::Value(account_id, value),
                         Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,

@@ -56,10 +56,10 @@ async fn main() {
         }
 
         let request = match delimited[..] {
-            ["BALANCE", account_id] => Balance(account_id.into()),
+            ["BALANCE", account_id] => ReadBalance(account_id.into()),
             ["DEPOSIT", account_id, amount] => {
                 match amount.parse::<i64>() {
-                    Ok(amount) => BalanceChange(account_id.into(), BalanceDiff(amount)),
+                    Ok(amount) => WriteBalance(account_id.into(), BalanceDiff(amount)),
                     Err(e) => {
                         error!("ABORTING! Failed to parse amount: {e:?}");
                         Abort
@@ -68,7 +68,7 @@ async fn main() {
             },
             ["WITHDRAW", account_id, amount] => {
                 match amount.parse::<i64>() {
-                    Ok(amount) => BalanceChange(account_id.into(), BalanceDiff(amount * -1)),
+                    Ok(amount) => WriteBalance(account_id.into(), BalanceDiff(amount * -1)),
                     Err(e) => {
                         error!("ABORTING! Failed to parse amount: {e:?}");
                         Abort
@@ -88,7 +88,7 @@ async fn main() {
             std::process::exit(1);
         }
 
-        let response = match stream.recv::<ClientResponse>().await {
+        let response: ClientResponse = match stream.recv().await {
             Some(Ok(response)) => response,
             Some(Err(e)) => {
                 error!("Error on receiving response: {e:?}");
@@ -100,7 +100,7 @@ async fn main() {
             }
         };
 
-        response.print();
+        println!("{}", response.format());
         if response.is_final() {
             break;
         }
