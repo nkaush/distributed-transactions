@@ -499,7 +499,7 @@ impl Server {
                 ClientRequest::Abort => {
                     shard.abort(&tx_id).await.unwrap();
                     info!("Abort {tx_id} completed on {shard_id}.");
-                    return;
+                    Response(tx_id, ClientResponse::Aborted)
                 }
             };
 
