@@ -1,4 +1,5 @@
 pub mod config;
+pub mod stream;
 
 use serde::{Deserialize, Serialize};
 

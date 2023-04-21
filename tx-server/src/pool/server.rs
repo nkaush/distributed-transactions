@@ -3,7 +3,7 @@ use tokio::{
     task::JoinHandle, select
 };
 use serde::{de::DeserializeOwned, Serialize};
-use crate::utils::MessageStream;
+use tx_common::stream::MessageStream;
 use super::NodeId;
 use log::trace;
 use std::fmt;

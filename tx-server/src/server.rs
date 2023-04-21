@@ -1,10 +1,11 @@
 use crate::{
     sharding::{Shard, Abort, IdGen, TransactionIdGenerator, TransactionId}, 
     pool::server::{ServerStateMessage, ServerStateMessageType}, BalanceDiff,
-    pool::{ConnectionPoolBuilder, ServerGroup}, utils::MessageStream
+    pool::{ConnectionPoolBuilder, ServerGroup}
 };
 use tx_common::{
-    Amount, config::{NodeId, Config}, ClientRequest, ClientResponse, AccountId
+    Amount, ClientRequest, ClientResponse, AccountId,
+    config::{NodeId, Config}, stream::MessageStream
 };
 use tokio::{
     sync::mpsc::*, sync::mpsc::error::SendError, 
@@ -436,26 +437,22 @@ impl Server {
             Finished(client_id) => {
                 self.clients.remove(&client_id);
             },
-            Forward(target, tx_id, req) => {
-                match target {
-                    ForwardTarget::Broadcast => {
-                        if let ClientRequest::Commit = req {
-                            self.commit_status.insert(tx_id, (0, CommitStatus::ReadyToCommit));
-                        }
+            Forward(ForwardTarget::Broadcast, tx_id, req) => {
+                if let ClientRequest::Commit = req {
+                    self.commit_status.insert(tx_id, (0, CommitStatus::ReadyToCommit));
+                }
 
-                        let fwd_req: Forwarded = Forwarded::Request(tx_id, req);
-                        if let Err(e) = self.broadcast(fwd_req) {
-                            error!("Unknown server disconnected: {e} ... exiting.");
-                            std::process::exit(1);
-                        }
-                    },
-                    ForwardTarget::Node(node_id) => {
-                        let fwd_req = Forwarded::Request(tx_id, req);
-                        if let Err(e) = self.pass_message(node_id, fwd_req) {
-                            error!("Server {node_id} disconnected: {e} ... exiting.");
-                            std::process::exit(1);
-                        }
-                    }
+                let fwd_req: Forwarded = Forwarded::Request(tx_id, req);
+                if let Err(e) = self.broadcast(fwd_req) {
+                    error!("Unknown server disconnected: {e} ... exiting.");
+                    std::process::exit(1);
+                }
+            },
+            Forward(ForwardTarget::Node(node_id), tx_id, req) => {
+                let fwd_req = Forwarded::Request(tx_id, req);
+                if let Err(e) = self.pass_message(node_id, fwd_req) {
+                    error!("Server {node_id} disconnected: {e} ... exiting.");
+                    std::process::exit(1);
                 }
             }
         };
@@ -519,7 +516,8 @@ impl Server {
             *curr_status = commit_status;
         }
 
-        if *count == self.server_pool.len() {                    
+        debug!("Two-phase commit for {tx_id} received {}/{} responses", *count, self.server_pool.len());
+        if *count == self.server_pool.len() {
             match *curr_status {
                 CommitStatus::ReadyToCommit => {
                     debug!("All shards ready to commit.");

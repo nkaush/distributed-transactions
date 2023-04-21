@@ -3,12 +3,11 @@ use tokio::{
     sync::mpsc::{UnboundedReceiver, UnboundedSender, unbounded_channel}, select,
     io, time::{timeout, error::Elapsed}, net::{TcpStream, TcpListener}
 };
+use tx_common::{config::{Config, NodeId}, stream::MessageStream};
 use serde::{Serialize, de::DeserializeOwned, Deserialize};
 use tokio_retry::{Retry, strategy::FixedInterval};
 use std::{net::SocketAddr, fmt, time::Duration};
 use super::{ConnectionPool, ServerGroup};
-use tx_common::config::{Config, NodeId};
-use crate::utils::MessageStream;
 use log::{trace, error};
 
 pub struct ConnectionPoolBuilder<M> {
