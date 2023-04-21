@@ -1,6 +1,5 @@
-use tx_server::pool::ConnectionPool;
-use tx_common::{config::{self, NodeId, Config}, ClientRequest, ClientResponse};
-use log::error;
+use tx_common::config::{self, NodeId, Config};
+use tx_server::server::Server;
 
 pub fn parse_config(path: &str, given_node_name: char) -> Result<Config, String> {
     match config::parse_config(path) {
@@ -16,7 +15,7 @@ pub fn parse_config(path: &str, given_node_name: char) -> Result<Config, String>
 }
 
 #[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
+async fn main() {
     env_logger::init();
     let args: Vec<_> = std::env::args().collect();
     if args.len() != 3 {
@@ -36,5 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    Ok(())
+    let mut server = Server::new(node_id, config, 60).await;
+
+    server.serve().await;
 }

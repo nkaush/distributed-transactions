@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use serde::{Deserialize, Serialize};
 use tx_common::config::NodeId;
 use std::time::SystemTime;
 use std::hash::Hash;
@@ -15,7 +16,7 @@ pub trait IdGen {
     fn next(&mut self) -> Self::TxId;
 }
 
-#[derive(Clone, Copy, Debug, Eq, Hash, Ord, PartialOrd, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialOrd, PartialEq, Serialize)]
 pub struct ClockTransactionId {
     ts: u128,
     coordinator: NodeId

@@ -7,10 +7,10 @@ use tokio::sync::Notify;
 use log::{trace, error};
 
 #[derive(Debug, Eq, PartialEq)]
-pub enum Abort<K> {
+pub enum Abort {
     ConsistencyCheckFailed,
     OrderViolation,
-    ObjectNotFound(K)
+    ObjectNotFound
 }
 
 pub struct Shard<K, T, D> 
@@ -78,14 +78,14 @@ where
             .and_then(|notify| Some(notify.notify_waiters()));
     }
 
-    pub async fn read(&self, id: &TransactionId, object_id: K) -> Result<T, Abort<K>> where T: Clone, K: std::fmt::Debug {
+    pub async fn read(&self, id: &TransactionId, object_id: &K) -> Result<T, Abort> where T: Clone, K: std::fmt::Debug {
         trace!("read(id={id}, object_id={object_id:?})");
         loop {
             let obj = match self.get_object(&object_id).await {
                 Some(obj) => obj,
                 None => {
                     trace!("ABORT read(id={id}, object_id={object_id:?}) -- object does not exist");
-                    return Err(Abort::ObjectNotFound(object_id))
+                    return Err(Abort::ObjectNotFound)
                 }
             };
             let mut guard = obj.lock().await;
@@ -108,7 +108,7 @@ where
         }
     }
 
-    pub async fn write(&self, id: &TransactionId, object_id: K, diff: D) -> Result<(), Abort<K>> where D: Clone, K: std::fmt::Debug {
+    pub async fn write(&self, id: &TransactionId, object_id: K, diff: D) -> Result<(), Abort> where D: Clone, K: std::fmt::Debug {
         let obj_id_fmt = format!("{object_id:?}");
         trace!("write(id={id}, object_id={object_id:?})");
 
@@ -133,7 +133,7 @@ where
         }
     }
 
-    pub async fn check_commit(&self, id: &TransactionId) -> Result<(), Abort<K>> {
+    pub async fn check_commit(&self, id: &TransactionId) -> Result<(), Abort> {
         trace!("check_commit(id={id})");
         loop {
             let map_guard = self.objects.lock().await;
@@ -176,7 +176,7 @@ where
         }
     }
 
-    pub async fn commit(&self, id: &TransactionId) -> Result<Vec<(K, T)>, Abort<K>> where K: std::fmt::Debug {
+    pub async fn commit(&self, id: &TransactionId) -> Result<Vec<(K, T)>, Abort> where K: std::fmt::Debug {
         trace!("commit(id={id})");
         loop {
             let map_guard = self.objects.lock().await;
@@ -347,7 +347,7 @@ mod test {
 
         let shard_clone3 = shard.clone();
         let join_tx3: JoinHandle<Instant> = tokio::spawn(async move {
-            let read_res = shard_clone3.read(&tx3, 1).await;
+            let read_res = shard_clone3.read(&tx3, &1).await;
             assert!(read_res.is_ok());
             assert_eq!(read_res.unwrap(), 30);
 
@@ -396,9 +396,9 @@ mod test {
             // The first inner call to read will be blocked on tx1 then will wait
             // The next inner call to read will fail since the object has been
             // deleted after tx1 failed the consistency check
-            let read_res = shard_clone2.read(&tx2, 1).await;
+            let read_res = shard_clone2.read(&tx2, &1).await;
             assert!(read_res.is_err());
-            assert_eq!(read_res.unwrap_err(), Abort::ObjectNotFound(1));
+            assert_eq!(read_res.unwrap_err(), Abort::ObjectNotFound);
 
             Instant::now()
         });
@@ -425,7 +425,7 @@ mod test {
             // wait until the older transaction has been resolved. The older 
             // transaction will be aborted, so this transaction must also be 
             // aborted since no other older transactions have written. 
-            let read_res = shard_clone2.read(&tx2, 1).await;
+            let read_res = shard_clone2.read(&tx2, &1).await;
             assert!(read_res.is_err());
             assert_eq!(read_res.unwrap_err(), Abort::OrderViolation);
             assert!(shard_clone2.abort(&tx1).await.is_ok());

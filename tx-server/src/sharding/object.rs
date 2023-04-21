@@ -62,6 +62,7 @@ where
     T: Clone + Diffable<D>, 
     D: Updateable 
 {
+    #[allow(dead_code)]
     pub fn new(value: T, owner_id: NodeId) -> Self {
         Self {
             value,

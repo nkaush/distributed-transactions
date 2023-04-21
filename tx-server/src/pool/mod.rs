@@ -1,15 +1,13 @@
 pub mod server;
 mod builder;
 
-pub use builder::ConnectionPoolBuilder;
-
 use tokio::{sync::mpsc::{UnboundedReceiver, UnboundedSender}, net::TcpListener};
 use server::{RemoteServerHandle, ServerStateMessage};
 use std::{collections::HashMap};
 use tx_common::config::NodeId;
-use log::{trace, error};
 
 pub type ServerGroup<M> = HashMap<NodeId, RemoteServerHandle<M>>;
+pub use builder::ConnectionPoolBuilder;
 
 pub struct ConnectionPool<M> {
     pub listener: TcpListener, 
