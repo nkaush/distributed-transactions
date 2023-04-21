@@ -1,5 +1,5 @@
+pub mod coordinator;
 pub mod sharding;
-pub mod server;
 pub mod pool;
 
 use crate::sharding::{Diffable, Updateable};

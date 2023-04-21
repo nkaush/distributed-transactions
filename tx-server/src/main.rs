@@ -1,5 +1,5 @@
 use tx_common::config::{self, NodeId, Config};
-use tx_server::server::Server;
+use tx_server::coordinator::Server;
 
 pub fn parse_config(path: &str, given_node_name: char) -> Result<Config, String> {
     match config::parse_config(path) {
@@ -35,7 +35,7 @@ async fn main() {
         }
     };
 
-    let mut server = Server::new(node_id, config, 60).await;
+    let mut server = Server::start(node_id, config, 60).await;
 
     server.serve().await;
 }
