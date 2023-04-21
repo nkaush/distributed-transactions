@@ -48,6 +48,7 @@ async fn main() {
         if !transaction_started {
             if let ["BEGIN"] = delimited[..] {
                 transaction_started = true;
+                println!("OK");
             }
 
             buffer.clear();
@@ -60,8 +61,8 @@ async fn main() {
                 match amount.parse::<i64>() {
                     Ok(amount) => BalanceChange(account_id.into(), BalanceDiff(amount)),
                     Err(e) => {
-                        error!("Failed to parse amount: {e:?}");
-                        std::process::exit(1);
+                        error!("ABORTING! Failed to parse amount: {e:?}");
+                        Abort
                     }
                 }
             },
@@ -69,16 +70,16 @@ async fn main() {
                 match amount.parse::<i64>() {
                     Ok(amount) => BalanceChange(account_id.into(), BalanceDiff(amount * -1)),
                     Err(e) => {
-                        error!("Failed to parse amount: {e:?}");
-                        std::process::exit(1);
+                        error!("ABORTING! Failed to parse amount: {e:?}");
+                        Abort
                     }
                 }
             },
             ["COMMIT"] => Commit,
             ["ABORT"] => Abort,
             _ => {
-                error!("Unknown command: `{}`", buffer.trim());
-                std::process::exit(1);
+                error!("ABORTING! Unknown command: `{}`", buffer.trim());
+                Abort
             }
         };
 

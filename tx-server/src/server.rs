@@ -132,7 +132,10 @@ fn format_commit_result(mut result: Vec<(String, i64)>) {
             output += &format!("{k} = {v} ");
         }
     }
-    println!("{output}");
+
+    if !output.is_empty() {
+        println!("{output}");
+    }
 }
 
 impl Client {

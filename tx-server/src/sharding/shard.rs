@@ -52,13 +52,22 @@ where
             .map(Clone::clone)
     }
 
-    async fn get_object_or_insert(&self, object_id: K) -> Arc<Mutex<TimestampedObject<T, D>>> {
-        self.objects
+    async fn get_object_or_insert_if_valid(&self, object_id: &K, diff: &D) -> Option<Arc<Mutex<TimestampedObject<T, D>>>> {
+        let mut guard = self.objects
             .lock()
-            .await
-            .entry(object_id)
-            .or_insert(Arc::new(Mutex::new(TimestampedObject::default(self.shard_id))))
-            .clone()
+            .await;
+
+        match guard.get(&object_id) {
+            Some(object) => Some(object.clone()),
+            None => {
+                if T::default().diff(diff).check().is_ok() {
+                    guard.insert(object_id.clone(), Arc::new(Mutex::new(TimestampedObject::default(self.shard_id))));
+                    guard.get(&object_id).map(Clone::clone)
+                } else {
+                    None
+                }
+            }
+        }
     }
 
     async fn get_notification(&self, id: &TransactionId) -> Arc<Notify> {
@@ -113,7 +122,13 @@ where
         trace!("write(id={id}, object_id={object_id:?})");
 
         loop {
-            let obj: Arc<Mutex<TimestampedObject<T, D>>> = self.get_object_or_insert(object_id.clone()).await;
+            let obj = match self.get_object_or_insert_if_valid(&object_id, &diff).await {
+                Some(obj) => obj,
+                None => {
+                    trace!("ABORT write(id={id}, object_id={object_id:?}) -- initial diff is invalid");
+                    return Err(Abort::ObjectNotFound)
+                }
+            };
             let mut guard = obj.lock().await;
             match guard.write(id, diff.clone()) {
                 Ok(_) => {
@@ -312,6 +327,8 @@ mod test {
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
 
+        // Write an initial value that will be accepted
+        assert!(shard.write(&tx1, 1, BalanceDiff(1)).await.is_ok());
         assert!(shard.write(&tx1, 1, BalanceDiff(-10)).await.is_ok());
         assert!(shard.write(&tx2, 1, BalanceDiff(20)).await.is_ok());
 
@@ -330,6 +347,21 @@ mod test {
         });
 
         assert!(join_tx1.await.unwrap() < join_tx2.await.unwrap());
+    }
+
+    #[test_log::test(tokio::test(flavor="multi_thread", worker_threads=2))]
+    async fn test_aborted_initial_invalid_write() {
+        let shard: Arc<Shard<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
+        let mut id_gen = TransactionIdGenerator::new('B');
+        let tx = id_gen.next();
+
+        // Ensure that an invalid write will not create an object
+        let write_res = shard.write(&tx, 1, BalanceDiff(-10)).await;
+        assert!(write_res.is_err());
+        assert_eq!(write_res.unwrap_err(), Abort::ObjectNotFound);
+
+        // Ensure the abort goes through
+        assert!(shard.abort(&tx).await.is_ok());
     }
 
     #[test_log::test(tokio::test(flavor="multi_thread", worker_threads=2))]
@@ -371,6 +403,9 @@ mod test {
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
 
+        // Write an initial value that will be accepted
+        assert!(shard.write(&tx1, 1, BalanceDiff(1)).await.is_ok());
+
         // Perform a write that will fail upon commit
         assert!(shard.write(&tx1, 1, BalanceDiff(-10)).await.is_ok());
 
@@ -385,8 +420,7 @@ mod test {
             assert_eq!(check_res.unwrap_err(), Abort::ConsistencyCheckFailed);
 
             // Abort the transaction
-            let abort_res = shard_clone1.abort(&tx1).await;
-            assert!(abort_res.is_ok());
+            assert!(shard_clone1.abort(&tx1).await.is_ok());
 
             Instant::now()
         });
@@ -415,6 +449,9 @@ mod test {
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
         let tx3 = id_gen.next();
+
+        // Write an initial value that will be accepted
+        assert!(shard.write(&tx1, 1, BalanceDiff(1)).await.is_ok());
 
         // Write a value that will be rejected at the consistency check
         assert!(shard.write(&tx1, 1, BalanceDiff(-20)).await.is_ok());

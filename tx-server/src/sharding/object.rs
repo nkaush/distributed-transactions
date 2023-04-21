@@ -62,16 +62,6 @@ where
     T: Clone + Diffable<D>, 
     D: Updateable 
 {
-    #[allow(dead_code)]
-    pub fn new(value: T, owner_id: NodeId) -> Self {
-        Self {
-            value,
-            committed_timestamp: Id::default(owner_id),
-            read_timestamps: BTreeSet::new(),
-            tentative_writes: BTreeMap::new()
-        }
-    }
-
     pub fn default(owner_id: NodeId) -> Self where T: Default {
         Self {
             value: Default::default(),
@@ -256,7 +246,7 @@ mod test {
 
     #[test]
     fn test_basic_write() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx = id_gen.next();
 
@@ -269,7 +259,7 @@ mod test {
 
     #[test]
     fn test_basic_write_with_update() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx = id_gen.next();
 
@@ -288,7 +278,7 @@ mod test {
 
     #[test]
     fn test_commit_stall() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -314,7 +304,7 @@ mod test {
 
     #[test]
     fn test_write_after_newer_commit() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -336,7 +326,7 @@ mod test {
     
     #[test]
     fn test_newer_transaction_writes_first() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -358,7 +348,7 @@ mod test {
 
     #[test]
     fn test_basic_abort() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::<i64, _>::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx = id_gen.next();
 
@@ -378,7 +368,7 @@ mod test {
 
     #[test]
     fn test_aborted_transaction_with_future_commits() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -404,7 +394,7 @@ mod test {
 
     #[test]
     fn test_basic_consistency_check_failure() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx = id_gen.next();
 
@@ -420,7 +410,7 @@ mod test {
 
     #[test]
     fn test_consistency_check_failure_with_future_commit() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -444,7 +434,7 @@ mod test {
 
     #[test]
     fn test_basic_read() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -458,7 +448,7 @@ mod test {
 
     #[test]
     fn test_read_before_non_committed_write() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -474,7 +464,7 @@ mod test {
 
     #[test]
     fn test_read_after_non_committed_write() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -498,7 +488,7 @@ mod test {
 
     #[test]
     fn test_read_before_committed_write() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -514,7 +504,7 @@ mod test {
 
     #[test]
     fn test_read_after_write_on_same_tx() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx = id_gen.next();
 
@@ -529,7 +519,7 @@ mod test {
 
     #[test]
     fn test_read_after_write_on_same_tx_multiple_tx() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -549,7 +539,7 @@ mod test {
 
     #[test]
     fn test_read_after_commit_on_different_tx() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
@@ -568,7 +558,7 @@ mod test {
 
     #[test]
     fn test_read_created_object() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::<i64, _>::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx = id_gen.next();
 
@@ -579,7 +569,7 @@ mod test {
 
     #[test]
     fn test_read_on_unwritten_object() {
-        let mut object = TimestampedObject::new(0, 'A');
+        let mut object = TimestampedObject::<i64, _>::default('A');
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
