@@ -25,8 +25,7 @@ pub struct Server {
     clients: HashMap<TransactionId, ClientHandle>,
     id_gen: TransactionIdGenerator,
     from_clients: UnboundedReceiver<ClientState>,
-    client_state_snd: UnboundedSender<ClientState>,
-    commit_status: HashMap<TransactionId, (usize, CommitStatus)>
+    client_state_snd: UnboundedSender<ClientState>
 }
 
 struct ServerHandle {
@@ -38,7 +37,9 @@ struct ServerHandle {
 }
 
 struct ClientHandle {
-    forward_snd: UnboundedSender<ClientResponse>
+    forward_snd: UnboundedSender<ClientResponse>,
+    commit_count: usize,
+    commit_status: CommitStatus
 }
 
 fn format_commit_result(mut result: Vec<(String, i64)>) {
@@ -81,7 +82,6 @@ impl Server {
             from_servers: server_pool.from_members,
             listener: server_pool.listener,
             clients: HashMap::new(),
-            commit_status: HashMap::new(),
             from_clients,
             client_state_snd,
             shard_ids
@@ -126,14 +126,11 @@ impl Server {
     fn handle_client_state(&mut self, client_state: ClientState) {
         use ClientState::*;
         match client_state {
-            Finished(client_id) => {
-                self.clients.remove(&client_id);
+            Finished(tx_id) => {
+                debug!("Reaping client connection for {tx_id}");
+                self.clients.remove(&tx_id);
             },
             Forward(ForwardTarget::Broadcast, tx_id, req) => {
-                if let ClientRequest::Commit = req {
-                    self.commit_status.insert(tx_id, (0, CommitStatus::ReadyToCommit));
-                }
-
                 let fwd_req: Forwarded = Forwarded::Request(tx_id, req);
                 if let Err(e) = self.broadcast(fwd_req) {
                     error!("Unknown server disconnected: {e} ... exiting.");
@@ -202,15 +199,15 @@ impl Server {
     }
 
     fn handle_two_phase_commit(&mut self, tx_id: TransactionId, commit_status: CommitStatus) {
-        let (count, curr_status) = self.commit_status.get_mut(&tx_id).unwrap();
-        *count += 1;
+        let client_handle = self.clients.get_mut(&tx_id).unwrap();
+        client_handle.commit_count += 1;
         if let CommitStatus::CannotCommit = commit_status {
-            *curr_status = commit_status;
+            client_handle.commit_status = commit_status;
         }
 
-        debug!("Two-phase commit for {tx_id} received {}/{} responses", *count, self.server_pool.len());
-        if *count == self.server_pool.len() {
-            match *curr_status {
+        debug!("Two-phase commit for {tx_id} received {}/{} responses", client_handle.commit_count, self.server_pool.len());
+        if client_handle.commit_count == self.server_pool.len() {
+            match client_handle.commit_status {
                 CommitStatus::ReadyToCommit => {
                     debug!("All shards ready to commit.");
                     let fwd_req = Forwarded::DoCommit(tx_id);
@@ -232,8 +229,6 @@ impl Server {
                     }
                 }
             }
-
-            self.commit_status.remove(&tx_id);
         }
     }
 
@@ -284,7 +279,11 @@ impl Server {
                         let handle = self.get_handle();
                         let tx_id = handle.tx_id;
                         let client = Client::new(handle, stream, rcv);
-                        self.clients.insert(tx_id, ClientHandle { forward_snd });
+                        self.clients.insert(tx_id, ClientHandle { 
+                            forward_snd,
+                            commit_count: 0,
+                            commit_status: CommitStatus::ReadyToCommit
+                        });
 
                         info!("Connected to client at {_addr:?} -- id={tx_id}");
                         tokio::spawn(client.handle());
