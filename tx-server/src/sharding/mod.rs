@@ -1,6 +1,9 @@
-pub mod transaction_id;
-pub mod shard;
+mod transaction_id;
+mod shard;
 mod object;
+
+pub use transaction_id::{IdGen, TransactionIdGenerator, TransactionId};
+pub use shard::{Abort, Shard};
 
 pub trait Updateable {
     fn update(&mut self, other: &Self);

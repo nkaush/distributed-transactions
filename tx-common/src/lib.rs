@@ -44,6 +44,15 @@ mod test {
     fn test_client_response_is_err() {
         assert!(ClientResponse::Aborted.is_err());
         assert!(ClientResponse::AbortedNotFound.is_err());
+        assert!(!ClientResponse::Ok.is_err());
+        assert!(!ClientResponse::CommitOk.is_err());
+        assert!(!ClientResponse::Value("test".into(), 10).is_err());
+    }
+
+    #[test]
+    fn test_client_response_is_ok() {
+        assert!(!ClientResponse::Aborted.is_ok());
+        assert!(!ClientResponse::AbortedNotFound.is_ok());
         assert!(ClientResponse::Ok.is_ok());
         assert!(ClientResponse::CommitOk.is_ok());
         assert!(ClientResponse::Value("test".into(), 10).is_ok());
