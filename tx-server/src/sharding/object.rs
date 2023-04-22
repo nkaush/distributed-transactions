@@ -3,7 +3,7 @@ use std::{
     ops::Bound::{Excluded, Included},
     convert::Infallible
 };
-use super::transaction_id::{Id, TransactionId};
+use super::transaction_id::TransactionId;
 use super::{Diffable, Updateable};
 use tx_common::config::NodeId;
 
@@ -65,7 +65,7 @@ where
     pub fn default(owner_id: NodeId) -> Self where T: Default {
         Self {
             value: Default::default(),
-            committed_timestamp: Id::default(owner_id),
+            committed_timestamp: TransactionId::default(owner_id),
             read_timestamps: BTreeSet::new(),
             tentative_writes: BTreeMap::new()
         }
@@ -363,7 +363,7 @@ mod test {
 
         // Ensure that no updates have been made to the object
         assert_eq!(object.value, 0);
-        assert_eq!(object.committed_timestamp, Id::default('A'));
+        assert_eq!(object.committed_timestamp, TransactionId::default('A'));
     }
 
     #[test]
@@ -384,7 +384,7 @@ mod test {
 
         // Ensure that no updates have been made to the object
         assert_eq!(object.value, 0);
-        assert_eq!(object.committed_timestamp, Id::default('A'));
+        assert_eq!(object.committed_timestamp, TransactionId::default('A'));
 
         // Newer transaction should be able to commit after older transaction
         // was aborted, and the older transaction should not be applied.

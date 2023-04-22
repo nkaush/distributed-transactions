@@ -4,18 +4,6 @@ use tx_common::config::NodeId;
 use std::time::SystemTime;
 use std::hash::Hash;
 
-pub trait Id where Self: Copy + Hash + Display {
-    fn is_default(&self) -> bool;
-    fn default(coordinator: NodeId) -> Self;
-}
-
-pub trait IdGen {
-    type TxId: Id;
-
-    fn new(node_id: NodeId) -> Self;
-    fn next(&mut self) -> Self::TxId;
-}
-
 #[derive(Clone, Copy, Debug, Deserialize, Eq, Hash, Ord, PartialOrd, PartialEq, Serialize)]
 pub struct ClockTransactionId {
     ts: u128,
@@ -28,12 +16,12 @@ impl Display for ClockTransactionId {
     }
 }
 
-impl Id for ClockTransactionId {
-    fn is_default(&self) -> bool {
+impl ClockTransactionId {
+    pub fn is_default(&self) -> bool {
         self.ts == 0
     }
 
-    fn default(coordinator: NodeId) -> Self {
+    pub fn default(coordinator: NodeId) -> Self {
         Self { ts: 0, coordinator }
     }
 }
@@ -45,22 +33,18 @@ pub struct ClockTransactionIdGenerator {
 }
 
 impl ClockTransactionIdGenerator {
+    pub fn new(node_id: NodeId) -> Self {
+        Self { node_id, last_systime: 0, last_count: 0 }
+    }
+
     fn get_system_time() -> u128 {
         SystemTime::now()
             .duration_since(SystemTime::UNIX_EPOCH)
             .expect("Clock may have gone backwards")
             .as_nanos()
     }
-}
 
-impl IdGen for ClockTransactionIdGenerator {
-    type TxId = ClockTransactionId;
-
-    fn new(node_id: NodeId) -> Self {
-        Self { node_id, last_systime: 0, last_count: 0 }
-    }
-
-    fn next(&mut self) -> Self::TxId {
+    pub fn next(&mut self) -> ClockTransactionId {
         let mut ts = Self::get_system_time();
         if ts <= self.last_systime {
             self.last_count += 1;
@@ -70,12 +54,12 @@ impl IdGen for ClockTransactionIdGenerator {
             self.last_systime = ts;
         }
         
-        Self::TxId { ts, coordinator: self.node_id }
+        ClockTransactionId { ts, coordinator: self.node_id }
     }
 }
 
 pub type TransactionIdGenerator = ClockTransactionIdGenerator;
-pub type TransactionId = <TransactionIdGenerator as IdGen>::TxId;
+pub type TransactionId = ClockTransactionId;
 
 #[cfg(test)]
 mod test {

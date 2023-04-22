@@ -35,7 +35,8 @@ async fn main() {
         }
     };
 
-    let mut server = Server::start(node_id, config, 60).await;
-
-    server.serve().await;
+    Server::start(node_id, config, 60)
+        .await
+        .serve()
+        .await;
 }

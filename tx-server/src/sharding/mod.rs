@@ -2,7 +2,7 @@ mod transaction_id;
 mod shard;
 mod object;
 
-pub use transaction_id::{IdGen, TransactionIdGenerator, TransactionId};
+pub use transaction_id::{TransactionIdGenerator, TransactionId};
 pub use shard::{Abort, Shard};
 
 pub trait Updateable {
