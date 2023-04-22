@@ -2,7 +2,7 @@ mod protocol;
 mod client;
 
 use crate::{
-    sharding::{Shard, Abort, CommitResult, TransactionIdGenerator, TransactionId}, 
+    sharding::{Shard, Abort, CommitSuccess, TransactionIdGenerator, TransactionId}, 
     pool::server::{ServerStateMessage, ServerStateMessageType},
     pool::{ConnectionPoolBuilder, ServerGroup}, BalanceDiff
 };
@@ -42,24 +42,21 @@ struct ClientHandle {
     commit_status: CommitStatus
 }
 
-fn format_commit_result(result: CommitResult<Vec<(String, i64)>>) {
-    use CommitResult::*;
+fn format_commit_result(result: CommitSuccess<Vec<(String, i64)>>) {
+    use CommitSuccess::*;
 
-    match result {
-        ValueChanged(mut result) => {
-            result.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-            let mut output = String::new();
-            for (k, v) in result.into_iter() {
-                if v != 0 {
-                    output += &format!("{k} = {v} ");
-                }
+    if let ValueChanged(mut result) = result {
+        result.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+        let mut output = String::new();
+        for (k, v) in result.into_iter() {
+            if v != 0 {
+                output += &format!("{k} = {v} ");
             }
+        }
 
-            if !output.is_empty() {
-                println!("{output}");
-            }
-        },
-        NoChange(_) => ()
+        if !output.is_empty() {
+            println!("{output}");
+        }
     }
 }
 
@@ -161,6 +158,7 @@ impl Server {
         let resp_handle = self.get_server_send(sender_id);
         let shard = self.shard.clone();
         let shard_id = self.node_id;
+        info!("Handling remote request from {sender_id} for {tx_id}: {request:?}");
         tokio::spawn(async move {
             let fwd_resp: Forwarded = match request {
                 ClientRequest::WriteBalance(account_id, diff) => {
