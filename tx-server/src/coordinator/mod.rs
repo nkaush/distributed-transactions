@@ -9,7 +9,7 @@ use crate::{
 use tx_common::{Amount, ClientRequest, ClientResponse, config::{NodeId, Config}};
 use tokio::{sync::mpsc::*, select, net::TcpListener};
 use std::{sync::Arc, collections::HashMap};
-use log::{error, info, debug};
+use log::{error, info, trace};
 use client::Client;
 use protocol::*;
 
@@ -127,7 +127,7 @@ impl Server {
         use ClientState::*;
         match client_state {
             Finished(tx_id) => {
-                debug!("Reaping client connection for {tx_id}");
+                trace!("Reaping client connection for {tx_id}");
                 self.clients.remove(&tx_id);
             },
             Forward(ForwardTarget::Broadcast, tx_id, req) => {
@@ -205,11 +205,11 @@ impl Server {
             client_handle.commit_status = commit_status;
         }
 
-        debug!("Two-phase commit for {tx_id} received {}/{} responses", client_handle.commit_count, self.server_pool.len());
+        trace!("Two-phase commit for {tx_id} received {}/{} responses", client_handle.commit_count, self.server_pool.len());
         if client_handle.commit_count == self.server_pool.len() {
             match client_handle.commit_status {
                 CommitStatus::ReadyToCommit => {
-                    debug!("All shards ready to commit.");
+                    trace!("All shards ready to commit.");
                     let fwd_req = Forwarded::DoCommit(tx_id);
                     if let Err(e) = self.pass_to_client(&tx_id, ClientResponse::CommitOk) {
                         error!("Client handler for {tx_id} crashed: {e}");
@@ -222,7 +222,7 @@ impl Server {
                     }   
                 },
                 CommitStatus::CannotCommit => {
-                    debug!("Not all shards can commit. Notifying client task to initiate abort.");
+                    trace!("Not all shards can commit. Notifying client task to initiate abort.");
                     if let Err(e) = self.pass_to_client(&tx_id, ClientResponse::Aborted) {
                         error!("Client handler for {tx_id} crashed: {e}");
                         std::process::exit(1);
@@ -238,23 +238,23 @@ impl Server {
         
         match state.msg {
             Message(Request(tx_id, request)) => {
-                debug!("Handling remote request for {tx_id}: {request:?}");
+                trace!("Handling remote request for {tx_id} on behalf of coordinator {}: {request:?}", state.member_id);
                 self.handle_remote_request(state.member_id, tx_id, request)
             },
             Message(Response(tx_id, resp)) => {
-                debug!("Passing response from remote request for {tx_id} back to client: {resp:?}");
+                trace!("Passing response to remote request for {tx_id} from shard {} back to client: {resp:?}", state.member_id);
                 if let Err(e) = self.pass_to_client(&tx_id, resp) {
                     error!("Client handler for {tx_id} crashed: {e}");
                     std::process::exit(1); // TODO maybe abort the transaction???
                 }
             },
             Message(TwoPhaseCommitStatus(tx_id, commit_status)) => {
-                debug!("Handling two-phase commit status for {tx_id}: {commit_status:?}");
+                trace!("Handling two-phase commit status for {tx_id} initiated at {}: {commit_status:?}", state.member_id);
                 self.handle_two_phase_commit(tx_id, commit_status);
             },
             Message(DoCommit(tx_id)) => {
-                debug!("Doing commit for {tx_id}...");
-                let shard = self.shard.clone();
+                trace!("Doing commit for {tx_id}...");
+                let shard: AtomicShard = self.shard.clone();
                 tokio::spawn(async move {
                     match shard.commit(&tx_id).await {
                         Ok(result) => format_commit_result(result),

@@ -5,7 +5,7 @@ use tx_common::{
 use super::{protocol::*, ServerHandle, AtomicShard, format_commit_result};
 use crate::{sharding::{Abort, TransactionId}, BalanceDiff};
 use tokio::{sync::mpsc::*, net::TcpStream};
-use log::{error, info, debug};
+use log::{error, info, trace};
 
 /// This struct contains all the data that a client handler task uses to process
 /// a transaction from a client. This struct contains data pertaining to the 
@@ -62,11 +62,11 @@ impl Client {
             })
     }
 
-    async fn handle_balance_change(&mut self, account_id: AccountId, diff: BalanceDiff) -> Result<(), ()> {
+    async fn handle_balance_change_request(&mut self, account_id: AccountId, diff: BalanceDiff) -> Result<(), ()> {
         let account_id_fmt = format!("{account_id}");
         let resp: ClientResponse = match self.extract_shard(&account_id) {
             TargetShard::Remote(shard_id) => {
-                debug!("Forwarding client request on {} to shard {shard_id}: BalanceChange({account_id}, {diff:?})", self.transaction_id);
+                trace!("Forwarding client request on {} to shard {shard_id}: BalanceChange({account_id}, {diff:?})", self.transaction_id);
                 let state = ClientState::Forward(
                     ForwardTarget::Node(shard_id), 
                     self.transaction_id, 
@@ -77,11 +77,11 @@ impl Client {
                     error!("Failed to pass message to the shard server...");
                 }
 
-                debug!("Blocking wait for shard {shard_id}'s response to client request on {}", self.transaction_id);
+                trace!("Blocking wait for shard {shard_id}'s response to client request on {}", self.transaction_id);
                 self.forward_rcv.recv().await.unwrap()
             },
             TargetShard::Local => {
-                debug!("Handling client request on {} locally: BalanceChange({account_id}, {diff:?})", self.transaction_id);
+                trace!("Handling client request on {} locally: BalanceChange({account_id}, {diff:?})", self.transaction_id);
                 match self.shard.write(&self.transaction_id, account_id, diff).await {
                     Ok(_) => ClientResponse::Ok,
                     Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,
@@ -89,14 +89,14 @@ impl Client {
                 }
             },
             TargetShard::DoesNotExist => {
-                debug!("Unable to handle client request on {}: BalanceChange({account_id}, {diff:?}) -- account does not exist", self.transaction_id);
+                trace!("Unable to handle client request on {}: BalanceChange({account_id}, {diff:?}) -- account does not exist", self.transaction_id);
                 ClientResponse::AbortedNotFound
             }
         };
 
-        debug!("Client request on {}: BalanceChange({account_id_fmt}, {diff:?}) => {resp:?}", self.transaction_id);
+        trace!("Client request on {}: BalanceChange({account_id_fmt}, {diff:?}) => {resp:?}", self.transaction_id);
         let ret_val = if resp.is_err() {
-            debug!("Aborting transaction {}...", self.transaction_id);
+            trace!("Aborting transaction {}...", self.transaction_id);
             self.do_abort().await;
             Err(())
         } else {
@@ -110,11 +110,11 @@ impl Client {
         ret_val
     }
 
-    async fn handle_balance(&mut self, account_id: AccountId) -> Result<(), ()> {
+    async fn handle_balance_request(&mut self, account_id: AccountId) -> Result<(), ()> {
         let account_id_fmt = format!("{account_id}");
         let resp: ClientResponse = match self.extract_shard(&account_id) {
             TargetShard::Remote(shard_id) => {
-                debug!("Forwarding client request on {} to shard {shard_id}: Balance({account_id})", self.transaction_id);
+                trace!("Forwarding client request on {} to shard {shard_id}: Balance({account_id})", self.transaction_id);
                 let state = ClientState::Forward(
                     ForwardTarget::Node(shard_id), 
                     self.transaction_id, 
@@ -125,11 +125,11 @@ impl Client {
                     error!("Failed to pass message to the shard server...");
                 }
 
-                debug!("Blocking wait for shard {shard_id}'s response to client request on {}", self.transaction_id);
+                trace!("Blocking wait for shard {shard_id}'s response to client request on {}", self.transaction_id);
                 self.forward_rcv.recv().await.unwrap()
             },
             TargetShard::Local => {
-                debug!("Handling client request on {} locally: Balance({account_id})", self.transaction_id);
+                trace!("Handling client request on {} locally: Balance({account_id})", self.transaction_id);
                 match self.shard.read(&self.transaction_id, &account_id).await {
                     Ok(value) => ClientResponse::Value(account_id, value),
                     Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,
@@ -137,14 +137,14 @@ impl Client {
                 }
             },
             TargetShard::DoesNotExist => {
-                debug!("Unable to handle client request on {}: Balance({account_id}) -- account does not exist", self.transaction_id);
+                trace!("Unable to handle client request on {}: Balance({account_id}) -- account does not exist", self.transaction_id);
                 ClientResponse::AbortedNotFound
             }
         };
 
-        debug!("Client request on {}: Balance({account_id_fmt}) => {resp:?}", self.transaction_id);
+        trace!("Client request on {}: Balance({account_id_fmt}) => {resp:?}", self.transaction_id);
         let ret_val = if resp.is_err() {
-            debug!("Aborting transaction {}...", self.transaction_id);
+            trace!("Aborting transaction {}...", self.transaction_id);
             self.do_abort().await;
             Err(())
         } else {
@@ -187,7 +187,7 @@ impl Client {
         }
     }
 
-    async fn handle_commit(&mut self) {
+    async fn handle_commit_request(&mut self) {
         if let Err(_) = self.shard.check_commit(&self.transaction_id).await {
             info!("Consistency check on local shard failed: aborting...");
             self.do_abort().await;
@@ -225,17 +225,17 @@ impl Client {
             info!("Client task for {} handling {request:?}", self.transaction_id);
             match request {
                 ClientRequest::WriteBalance(account_id, diff) => {
-                    if self.handle_balance_change(account_id, diff).await.is_err() {
+                    if self.handle_balance_change_request(account_id, diff).await.is_err() {
                         break;
                     }
                 },
                 ClientRequest::ReadBalance(account_id) => {
-                    if self.handle_balance(account_id).await.is_err() {
+                    if self.handle_balance_request(account_id).await.is_err() {
                         break;
                     }
                 },
                 ClientRequest::Commit => {
-                    self.handle_commit().await;
+                    self.handle_commit_request().await;
                     break;
                 },
                 ClientRequest::Abort => {

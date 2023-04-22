@@ -3,7 +3,7 @@ use tx_common::{
     config::{Config, parse_config, NodeConfiguration}
 };
 use rand::seq::IteratorRandom;
-use log::{error, info};
+use log::{error, trace};
 
 #[tokio::main]
 async fn main() {
@@ -26,7 +26,7 @@ async fn main() {
     let mut rng = rand::thread_rng();
     let coordinator_cfg: &NodeConfiguration = config.values().choose(&mut rng).unwrap();
 
-    info!("Connecting to Node {}...", coordinator_cfg.node_id);
+    trace!("Connecting to Node {}...", coordinator_cfg.node_id);
 
     let shard_addr = format!("{}:{}", coordinator_cfg.hostname, coordinator_cfg.port);
     let mut stream = match tokio::net::TcpStream::connect(&shard_addr).await {
@@ -39,7 +39,7 @@ async fn main() {
 
     let mut buffer = String::new();
     let mut transaction_started = false;
-    while let Ok(_) = std::io::stdin().read_line(&mut buffer) {
+    while std::io::stdin().read_line(&mut buffer).is_ok() {
         let delimited: Vec <_> = buffer
             .trim()
             .split_ascii_whitespace()
@@ -49,6 +49,8 @@ async fn main() {
             if let ["BEGIN"] = delimited[..] {
                 transaction_started = true;
                 println!("OK");
+            } else {
+                trace!("Transaction has not started. Ignoring input `{buffer}`");
             }
 
             buffer.clear();
@@ -83,6 +85,7 @@ async fn main() {
             }
         };
 
+        trace!("Sending command to coordinator: {request:?}");
         if let Err(e) = stream.send(request).await {
             error!("Failed to send message to coordinator: {e:?}");
             std::process::exit(1);
