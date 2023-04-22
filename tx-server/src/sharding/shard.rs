@@ -191,7 +191,7 @@ where
         }
     }
 
-    pub async fn commit(&self, id: &TransactionId) -> Result<Vec<(K, T)>, Abort> where K: std::fmt::Debug {
+    pub async fn commit(&self, id: &TransactionId) -> Result<CommitResult<Vec<(K, T)>>, Abort> where K: std::fmt::Debug {
         trace!("commit(id={id})");
         loop {
             let map_guard = self.objects.lock().await;
@@ -231,7 +231,21 @@ where
                 None => {
                     trace!("commit(id={id}) DONE");
                     self.notify_and_remove(id).await;
-                    return Ok(result)
+                    let did_change = result
+                        .iter()
+                        .any(|(_, cr)| matches!(cr, CommitResult::ValueChanged(_)));
+                    let inner = result
+                        .into_iter()
+                        .map(|(k, v)| match v {
+                            CommitResult::ValueChanged(v) => (k, v),
+                            CommitResult::NoChange(v) => (k, v)
+                        })
+                        .collect::<Vec<_>>();
+                    if did_change {
+                        return Ok(CommitResult::ValueChanged(inner))
+                    } else {
+                        return Ok(CommitResult::NoChange(inner))
+                    }
                 }
             }
         }
@@ -286,7 +300,7 @@ mod test {
         assert!(shard.check_commit(&id).await.is_ok());
         let commit_res = shard.commit(&id).await;
         assert!(commit_res.is_ok());
-        assert_eq!(commit_res.unwrap(), expected);
+        assert_eq!(commit_res.unwrap(), CommitResult::ValueChanged(expected));
     }
 
     #[test_log::test(tokio::test(flavor="multi_thread", worker_threads=2))]

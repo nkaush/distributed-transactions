@@ -52,6 +52,12 @@ pub enum CommitFailure<E> {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub enum CommitResult<T> {
+    ValueChanged(T),
+    NoChange(T)
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub enum CheckCommitSuccess<T> {
     CommitValue(T),
     NothingToCommit
@@ -170,7 +176,7 @@ where
         }
     }
 
-    pub fn commit(&mut self, id: &TransactionId) -> Result<T, CommitFailure<T::ConsistencyCheckError>> {
+    pub fn commit(&mut self, id: &TransactionId) -> Result<CommitResult<T>, CommitFailure<T::ConsistencyCheckError>> {
         self.check_commit(id)
             .map(|success| {
                 if let CheckCommitSuccess::CommitValue(v) = success {
@@ -179,9 +185,11 @@ where
                         .unwrap();
                     self.committed_timestamp = ts;
                     self.value = v;
-                }
 
-                self.value.clone()
+                    CommitResult::ValueChanged(self.value.clone())
+                } else {
+                    CommitResult::NoChange(self.value.clone())
+                }
         })
     }
 
@@ -220,7 +228,7 @@ mod test {
     fn verify_commit_success(object: &mut TimestampedObject<i64, BalanceDiff>, id: &TransactionId, expected: i64) {
         let commit_res = object.commit(&id);
         assert!(commit_res.is_ok());
-        assert_eq!(commit_res.unwrap(), expected);
+        assert_eq!(commit_res.unwrap(), CommitResult::ValueChanged(expected));
         assert_eq!(object.value, expected);
         assert_eq!(&object.committed_timestamp, id);
     }

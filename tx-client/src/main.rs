@@ -32,7 +32,7 @@ async fn main() {
     let mut stream = match tokio::net::TcpStream::connect(&shard_addr).await {
         Ok(s) => MessageStream::from_tcp_stream(s),
         Err(e) => {
-            eprintln!("Failed to connect to coordinator {} at {}: {e:?}", coordinator_cfg.node_id, shard_addr);
+            eprintln!("Failed to connect to coordinator {} ({}): {}", coordinator_cfg.node_id, shard_addr, e.to_string());
             std::process::exit(1);
         }
     };
@@ -50,7 +50,7 @@ async fn main() {
                 transaction_started = true;
                 println!("OK");
             } else {
-                trace!("Transaction has not started. Ignoring input `{buffer}`");
+                trace!("Transaction has not started. Ignoring input `{}`", buffer.trim());
             }
 
             buffer.clear();

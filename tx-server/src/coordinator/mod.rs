@@ -2,7 +2,7 @@ mod protocol;
 mod client;
 
 use crate::{
-    sharding::{Shard, Abort, TransactionIdGenerator, TransactionId}, 
+    sharding::{Shard, Abort, CommitResult, TransactionIdGenerator, TransactionId}, 
     pool::server::{ServerStateMessage, ServerStateMessageType},
     pool::{ConnectionPoolBuilder, ServerGroup}, BalanceDiff
 };
@@ -42,17 +42,24 @@ struct ClientHandle {
     commit_status: CommitStatus
 }
 
-fn format_commit_result(mut result: Vec<(String, i64)>) {
-    result.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-    let mut output = String::new();
-    for (k, v) in result.into_iter() {
-        if v != 0 {
-            output += &format!("{k} = {v} ");
-        }
-    }
+fn format_commit_result(result: CommitResult<Vec<(String, i64)>>) {
+    use CommitResult::*;
 
-    if !output.is_empty() {
-        println!("{output}");
+    match result {
+        ValueChanged(mut result) => {
+            result.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+            let mut output = String::new();
+            for (k, v) in result.into_iter() {
+                if v != 0 {
+                    output += &format!("{k} = {v} ");
+                }
+            }
+
+            if !output.is_empty() {
+                println!("{output}");
+            }
+        },
+        NoChange(_) => ()
     }
 }
 

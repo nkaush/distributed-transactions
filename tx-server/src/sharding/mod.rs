@@ -4,6 +4,7 @@ mod object;
 
 pub use transaction_id::{TransactionIdGenerator, TransactionId};
 pub use shard::{Abort, Shard};
+pub use object::CommitResult;
 
 pub trait Updateable {
     fn update(&mut self, other: &Self);
