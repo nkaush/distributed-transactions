@@ -45,18 +45,21 @@ struct ClientHandle {
 fn format_commit_result(result: CommitSuccess<Vec<(String, i64)>>) {
     use CommitSuccess::*;
 
-    if let ValueChanged(mut result) = result {
-        result.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
-        let mut output = String::new();
-        for (k, v) in result.into_iter() {
-            if v != 0 {
-                output += &format!("{k} = {v} ");
-            }
+    let mut result = match result {
+        ValueChanged(r) => r,
+        NoChange(r) => r
+    };
+    
+    result.sort_unstable_by(|(a, _), (b, _)| a.cmp(b));
+    let mut output = String::new();
+    for (k, v) in result.into_iter() {
+        if v != 0 {
+            output += &format!("{k} = {v} ");
         }
+    }
 
-        if !output.is_empty() {
-            println!("{output}");
-        }
+    if !output.is_empty() {
+        println!("{output}");
     }
 }
 
