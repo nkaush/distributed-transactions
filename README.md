@@ -3,7 +3,7 @@
 ## Team Details
 * Cluster 45
 * Git Repo: https://gitlab.engr.illinois.edu/neilk3/cs425-mp3-neilk3-ngogate2/
-* Git Revision: 
+* Git Revision: fa48b4014fd31a9a15ec51f20a008e2e8f03bd30
 
 ## Group Members
 * Neha Gogate (ngogate2)
@@ -17,8 +17,8 @@
 
 ## Running Instructions:
 
-1. To start up a server, run `./server [node id] [path to config]`. Our system requires that `[node id]` be a single character (as described in the documentation). The system will repeatedly attempt to connect all nodes within 60 seconds. If not all nodes join within that time, the server executable will exit.  
-2. To start a client, run `./client [client id] [path to config]`. Our system DOES NOT use the `[client id]` field but it is kept in place to comply with the requirements. Thus, the `[client id]` field does not need to be unique across different transactions. The client will generate error message logs when it encounters TCP connection errors or when it receives invalid input. To prevent these errors from printing, run the client executable as follows: `./client [client id] [path to config] 2> /dev/null`. 
+1. To start up a server, run `./server [node id] [path to config]`. Our system requires that `[node id]` be a single character (as described in the documentation). The system will repeatedly attempt to connect all nodes within 60 seconds. If the nodes do not join within that time, the server executable will exit.  
+2. To start a client, run `./client [client id] [path to config]`. Our system DOES NOT use the `[client id]` field but it is kept in place to comply with the requirements. Thus, the `[client id]` field does not need to be unique across different transactions. The client will generate error message logs when it encounters TCP connection errors or when it receives invalid input. To prevent these errors from printing to the terminal, run the client executable as follows: `./client [client id] [path to config] 2> /dev/null`. 
 
 ## Design: 
 
