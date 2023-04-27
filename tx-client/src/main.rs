@@ -25,10 +25,27 @@ async fn main() {
 
     let mut rng = rand::thread_rng();
     let coordinator_cfg: &NodeConfiguration = config.values().choose(&mut rng).unwrap();
+    let shard_addr = format!("{}:{}", coordinator_cfg.hostname, coordinator_cfg.port);
+
+    let mut buffer = String::new();
+    while std::io::stdin().read_line(&mut buffer).is_ok() {
+        let delimited: Vec <_> = buffer
+            .trim()
+            .split_ascii_whitespace()
+            .collect();
+        
+        if let ["BEGIN"] = delimited[..] {
+            println!("OK");
+            buffer.clear();
+            break
+        } else {
+            trace!("Transaction has not started. Ignoring input `{}`", buffer.trim());
+        }
+
+        buffer.clear();
+    }
 
     trace!("Connecting to Node {}...", coordinator_cfg.node_id);
-
-    let shard_addr = format!("{}:{}", coordinator_cfg.hostname, coordinator_cfg.port);
     let mut stream = match tokio::net::TcpStream::connect(&shard_addr).await {
         Ok(s) => MessageStream::from_tcp_stream(s),
         Err(e) => {
@@ -37,25 +54,11 @@ async fn main() {
         }
     };
 
-    let mut buffer = String::new();
-    let mut transaction_started = false;
     while std::io::stdin().read_line(&mut buffer).is_ok() {
         let delimited: Vec <_> = buffer
             .trim()
             .split_ascii_whitespace()
             .collect();
-
-        if !transaction_started {
-            if let ["BEGIN"] = delimited[..] {
-                transaction_started = true;
-                println!("OK");
-            } else {
-                trace!("Transaction has not started. Ignoring input `{}`", buffer.trim());
-            }
-
-            buffer.clear();
-            continue
-        }
 
         let request = match delimited[..] {
             ["BALANCE", account_id] => ReadBalance(account_id.into()),
