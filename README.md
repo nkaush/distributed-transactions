@@ -3,7 +3,7 @@
 ## Team Details
 * Cluster 45
 * Git Repo: https://gitlab.engr.illinois.edu/neilk3/cs425-mp3-neilk3-ngogate2/
-* Git Revision: fa48b4014fd31a9a15ec51f20a008e2e8f03bd30
+* Git Revision: 98b00a18fa09a1f28faf330e83d85089ffe3d25d
 
 ## Group Members
 * Neha Gogate (ngogate2)
@@ -21,7 +21,6 @@
 2. To start a client, run `./client [client id] [path to config]`. Our system DOES NOT use the `[client id]` field but it is kept in place to comply with the requirements. Thus, the `[client id]` field does not need to be unique across different transactions. The client will generate error message logs when it encounters TCP connection errors or when it receives invalid input. To prevent these errors from printing to the terminal, run the client executable as follows: `./client [client id] [path to config] 2> /dev/null`. 
 
 ## Design: 
-
 Our system uses timestamped ordering to enforce an optimistic concurrency control. The system maintains a set of read timestamps and a set of tentative writes and their timestamps for each account on a server. The system then partitions the accounts by the first letter (i.e. an account starting with `A` will be stored on server `A`). Our system also uses 2-phased commit to ensure consistency across all servers (more on this below). Our system generates timestamps using the timestamp at the instant the client begins a transaction and connects to a coordinator. Timestamp ties across servers are broken by the node id of the server (coordinator). Local timestamp ties are broken by simply keeping track of the last timestamp generated and setting the newly generated timestamp to the last timestamp plus 1 if the newly generated timestamp is less than or equal to the last timestamp generated. 
 
 ### Data Structures
