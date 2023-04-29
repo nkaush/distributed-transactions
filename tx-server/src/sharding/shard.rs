@@ -10,7 +10,8 @@ use super::{Checkable};
 pub enum Abort {
     ConsistencyCheckFailed,
     OrderViolation,
-    ObjectNotFound
+    ObjectNotFound,
+    ObjectNotFoundSpecialCase
 }
 
 pub struct Shard<K, T> 
@@ -107,7 +108,7 @@ where
                 },
                 Err(RWFailure::AbortedNotFound) => {
                     trace!("ABORT read(id={id}, object_id={object_id:?}) -- SPECIAL CASE WHERE OBJECT EXISTS BC OF NEWER TRANSACTION");
-                    return Err(Abort::ObjectNotFound)
+                    return Err(Abort::ObjectNotFoundSpecialCase)
                 },
                 Err(RWFailure::WaitFor(waiting_on)) => {
                     drop(guard);
@@ -142,7 +143,7 @@ where
                 }
                 Err(RWFailure::AbortedNotFound) => {
                     trace!("ABORT read(id={id}, object_id={object_id:?}) -- SPECIAL CASE WHERE OBJECT EXISTS BC OF NEWER TRANSACTION");
-                    return Err(Abort::ObjectNotFound)
+                    return Err(Abort::ObjectNotFoundSpecialCase)
                 },
                 Err(RWFailure::WaitFor(waiting_on)) => {
                     drop(guard);
@@ -487,7 +488,7 @@ mod test {
             // aborted since no other older transactions have written. 
             let read_res = shard_clone2.read(&tx2, &1).await;
             assert!(read_res.is_err());
-            assert_eq!(read_res.unwrap_err(), Abort::ObjectNotFound);
+            assert_eq!(read_res.unwrap_err(), Abort::ObjectNotFoundSpecialCase);
             assert!(shard_clone2.abort(&tx1).await.is_ok());
 
             Instant::now()

@@ -14,4 +14,15 @@ python3 -u $BASE_DIR/read.py | tee > $LOGS_DIR/7.in | time ./client 7 config/vm.
 python3 -u $BASE_DIR/read.py | tee > $LOGS_DIR/8.in | time ./client 8 config/vm.config > $LOGS_DIR/8.out &
 python3 -u $BASE_DIR/read.py | tee > $LOGS_DIR/9.in | time ./client 9 config/vm.config > $LOGS_DIR/9.out &
 
+# python3 -u $BASE_DIR/read.py | time ./client 0 config/vm.config > $LOGS_DIR/0.out &
+# python3 -u $BASE_DIR/read.py | time ./client 1 config/vm.config > $LOGS_DIR/1.out &
+# python3 -u $BASE_DIR/read.py | time ./client 2 config/vm.config > $LOGS_DIR/2.out &
+# python3 -u $BASE_DIR/read.py | time ./client 3 config/vm.config > $LOGS_DIR/3.out &
+# python3 -u $BASE_DIR/read.py | time ./client 4 config/vm.config > $LOGS_DIR/4.out &
+# python3 -u $BASE_DIR/read.py | time ./client 5 config/vm.config > $LOGS_DIR/5.out &
+# python3 -u $BASE_DIR/read.py | time ./client 6 config/vm.config > $LOGS_DIR/6.out &
+# python3 -u $BASE_DIR/read.py | time ./client 7 config/vm.config > $LOGS_DIR/7.out &
+# python3 -u $BASE_DIR/read.py | time ./client 8 config/vm.config > $LOGS_DIR/8.out &
+# python3 -u $BASE_DIR/read.py | time ./client 9 config/vm.config > $LOGS_DIR/9.out &
+
 wait

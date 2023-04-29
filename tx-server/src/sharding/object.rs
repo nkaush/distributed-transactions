@@ -5,6 +5,7 @@ use std::{
 };
 use super::{transaction_id::TransactionId, Checkable};
 use tx_common::config::NodeId;
+use log::{debug};
 
 #[derive(Debug)]
 struct TentativeWrite<T> where {
@@ -98,6 +99,7 @@ where
                 },
                 Some((ts, tw)) => {
                     if ts == id { // if Ds was written by Tc, simply read Ds
+                        self.read_timestamps.insert(*id);
                         Ok(tw.value.clone())
                     } else {
                         // Wait until the transaction that wrote Ds is committed 
@@ -117,6 +119,7 @@ where
     }
 
     pub fn write(&mut self, id: &TransactionId, value: T) -> Result<(), RWFailure> {
+        debug!("{:?}", self.read_timestamps);
         let is_after_mrt = self.read_timestamps
             .iter()
             .next_back()

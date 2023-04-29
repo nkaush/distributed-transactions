@@ -4,3 +4,4 @@ target
 Cargo.lock
 .vscode
 logs
+__pycache__
