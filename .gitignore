@@ -3,3 +3,4 @@ server
 target
 Cargo.lock
 .vscode
+logs
