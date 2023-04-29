@@ -2,48 +2,34 @@ pub mod coordinator;
 pub mod sharding;
 pub mod pool;
 
-use crate::sharding::{Diffable, Updateable};
+use sharding::Checkable;
 pub use tx_common::BalanceDiff;
 
 #[derive(Debug, Clone)]
 pub struct NegativeBalance(tx_common::Amount);
 
-impl Updateable for BalanceDiff {
-    fn update(&mut self, other: &Self) {
-        let BalanceDiff(inner) = self;
-        let BalanceDiff(other) = other;
-
-        *inner += other;
-    }
-}
-
-impl Diffable<BalanceDiff> for tx_common::Amount {
+impl Checkable for tx_common::Amount {
     #[cfg(test)]
     type ConsistencyCheckError = ();
 
     #[cfg(not(test))]
     type ConsistencyCheckError = NegativeBalance;
 
-    fn diff(&self, diff: &BalanceDiff) -> Self { 
-        let BalanceDiff(change) = diff;
-        self + change
-    }
-
     #[cfg(test)]
-    fn check(self) -> Result<Self, Self::ConsistencyCheckError> {
-        if self >= 0 {
-            Ok(self)
+    fn check(&self) -> Result<(), Self::ConsistencyCheckError> {
+        if self >= &0 {
+            Ok(())
         } else {
             Err(())
         }
     }
 
     #[cfg(not(test))]
-    fn check(self) -> Result<Self, Self::ConsistencyCheckError> {
-        if self >= 0 {
-            Ok(self)
+    fn check(&self) -> Result<(), Self::ConsistencyCheckError> {
+        if self >= &0 {
+            Ok(())
         } else {
-            Err(NegativeBalance(self))
+            Err(NegativeBalance(*self))
         }
     }
 }

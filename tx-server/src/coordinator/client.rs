@@ -82,9 +82,27 @@ impl Client {
             },
             TargetShard::Local => {
                 trace!("Handling client request on {} locally: BalanceChange({account_id}, {diff:?})", self.transaction_id);
-                match self.shard.write(&self.transaction_id, account_id, diff).await {
-                    Ok(_) => ClientResponse::Ok,
-                    Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,
+                match self.shard.read(&self.transaction_id, &account_id).await {
+                    Ok(balance) => match self.shard.write(&self.transaction_id, account_id, balance + diff.0).await {
+                        Ok(_) => ClientResponse::Ok,
+                        Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,
+                        Err(_) => ClientResponse::Aborted
+                    },
+                    Err(Abort::ObjectNotFound) => 
+                        // if diff.0 < 0 {
+                        //     ClientResponse::AbortedNotFound
+                        // } else {
+                        //     match self.shard.write(&self.transaction_id, account_id, diff.0).await {
+                        //         Ok(_) => ClientResponse::Ok,
+                        //         Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,
+                        //         Err(_) => ClientResponse::Aborted
+                        //     }
+                        // }
+                        match self.shard.write(&self.transaction_id, account_id, diff.0).await {
+                            Ok(_) => ClientResponse::Ok,
+                            Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,
+                            Err(_) => ClientResponse::Aborted
+                        }
                     Err(_) => ClientResponse::Aborted
                 }
             },

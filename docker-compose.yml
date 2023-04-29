@@ -1,0 +1,68 @@
+version: '3.3'
+
+services:
+  shard-a:
+    container_name: shard-a
+    build: 
+      context: .
+      dockerfile: Dockerfile.server
+    environment:
+      - RUST_LOG=tx_server=trace
+      - NODEID=A
+    volumes:
+      - ./config/docker.config:/service/cfg/config
+    ports:
+      - 10000:10000
+    command: ./server A /service/cfg/config
+  shard-b:
+    container_name: shard-b
+    build: 
+      context: .
+      dockerfile: Dockerfile.server
+    environment:
+      - RUST_LOG=tx_server=trace
+      - NODEID=B
+    volumes:
+      - ./config/docker.config:/service/cfg/config
+    ports:
+      - 10001:10001
+    command: ./server B /service/cfg/config
+  shard-c:
+    container_name: shard-c
+    build: 
+      context: .
+      dockerfile: Dockerfile.server
+    environment:
+      - RUST_LOG=tx_server=trace
+      - NODEID=C
+    volumes:
+      - ./config/docker.config:/service/cfg/config
+    ports:
+      - 10002:10002
+    command: ./server C /service/cfg/config
+  shard-d:
+    container_name: shard-d
+    build: 
+      context: .
+      dockerfile: Dockerfile.server
+    environment:
+      - RUST_LOG=tx_server=trace
+      - NODEID=D
+    volumes:
+      - ./config/docker.config:/service/cfg/config
+    ports:
+      - 10003:10003
+    command: ./server D /service/cfg/config
+  shard-e:
+    container_name: shard-e
+    build: 
+      context: .
+      dockerfile: Dockerfile.server
+    environment:
+      - RUST_LOG=tx_server=trace
+      - NODEID=E
+    volumes:
+      - ./config/docker.config:/service/cfg/config
+    ports:
+      - 10004:10004
+    command: ./server E /service/cfg/config

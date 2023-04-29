@@ -1,10 +1,10 @@
 use std::{collections::HashMap, hash::Hash, sync::Arc, convert::Infallible};
 use crate::sharding::{object::*, transaction_id::TransactionId};
 use futures::{future, lock::Mutex, stream::FuturesUnordered};
-use super::{Diffable, Updateable};
 use tx_common::config::NodeId;
 use tokio::sync::Notify;
 use log::{trace, error};
+use super::{Checkable};
 
 #[derive(Debug, Eq, PartialEq)]
 pub enum Abort {
@@ -13,16 +13,14 @@ pub enum Abort {
     ObjectNotFound
 }
 
-pub struct Shard<K, T, D> 
+pub struct Shard<K, T> 
 where 
-    K: Hash + Eq, 
-    T: Diffable<D>, 
-    D: Updateable 
+    K: Hash + Eq
 {
     shard_id: NodeId, 
 
     // A collection of all the objects that this shard manages
-    objects: Mutex<HashMap<K, Arc<Mutex<TimestampedObject<T, D>>>>>,
+    objects: Mutex<HashMap<K, Arc<Mutex<TimestampedObject<T>>>>>,
 
     // A collection of notifications that are triggered when transactions are
     // resolved. These notifications wake up other operations waiting on pending 
@@ -30,11 +28,10 @@ where
     notifications: Mutex<HashMap<TransactionId, Arc<Notify>>>
 }
 
-impl<K, T, D> Shard<K, T, D>
+impl<K, T> Shard<K, T>
 where 
     K: 'static + Send + Clone + Eq + Hash, 
-    T: 'static + Send + Clone + Default + Diffable<D>, 
-    D: 'static + Send + Updateable
+    T: 'static + Send + Clone + Default + Checkable, 
 {
     pub fn new(shard_id: NodeId) -> Self {
         Self {
@@ -44,7 +41,7 @@ where
         }
     }
 
-    async fn get_object(&self, object_id: &K) -> Option<Arc<Mutex<TimestampedObject<T, D>>>> {
+    async fn get_object(&self, object_id: &K) -> Option<Arc<Mutex<TimestampedObject<T>>>> {
         self.objects
             .lock()
             .await
@@ -52,7 +49,7 @@ where
             .map(Clone::clone)
     }
 
-    async fn get_object_or_insert_if_valid(&self, object_id: &K, diff: &D) -> Option<Arc<Mutex<TimestampedObject<T, D>>>> {
+    async fn get_object_or_insert_if_valid(&self, object_id: &K, value: &T) -> Option<Arc<Mutex<TimestampedObject<T>>>> {
         let mut guard = self.objects
             .lock()
             .await;
@@ -60,7 +57,7 @@ where
         match guard.get(&object_id) {
             Some(object) => Some(object.clone()),
             None => {
-                if T::default().diff(diff).check().is_ok() {
+                if value.check().is_ok() {
                     guard.insert(object_id.clone(), Arc::new(Mutex::new(TimestampedObject::default(self.shard_id))));
                     guard.get(&object_id).map(Clone::clone)
                 } else {
@@ -108,6 +105,10 @@ where
                     trace!("ABORT read(id={id}, object_id={object_id:?}) -- timestamp ordering violation");
                     return Err(Abort::OrderViolation)
                 },
+                Err(RWFailure::AbortedNotFound) => {
+                    trace!("ABORT read(id={id}, object_id={object_id:?}) -- SPECIAL CASE WHERE OBJECT EXISTS BC OF NEWER TRANSACTION");
+                    return Err(Abort::ObjectNotFound)
+                },
                 Err(RWFailure::WaitFor(waiting_on)) => {
                     drop(guard);
                     trace!("read(id={id}, object_id={object_id:?}) waiting on {waiting_on}");
@@ -117,12 +118,12 @@ where
         }
     }
 
-    pub async fn write(&self, id: &TransactionId, object_id: K, diff: D) -> Result<(), Abort> where D: Clone, K: std::fmt::Debug {
+    pub async fn write(&self, id: &TransactionId, object_id: K, value: T) -> Result<(), Abort> where K: std::fmt::Debug {
         let obj_id_fmt = format!("{object_id:?}");
         trace!("write(id={id}, object_id={object_id:?})");
 
         loop {
-            let obj = match self.get_object_or_insert_if_valid(&object_id, &diff).await {
+            let obj = match self.get_object_or_insert_if_valid(&object_id, &value).await {
                 Some(obj) => obj,
                 None => {
                     trace!("ABORT write(id={id}, object_id={object_id:?}) -- initial diff is invalid");
@@ -130,7 +131,7 @@ where
                 }
             };
             let mut guard = obj.lock().await;
-            match guard.write(id, diff.clone()) {
+            match guard.write(id, value.clone()) {
                 Ok(_) => {
                     trace!("write(id={id}, object_id={obj_id_fmt}) DONE");
                     return Ok(())
@@ -138,6 +139,10 @@ where
                 Err(RWFailure::Abort) => {
                     trace!("ABORT write(id={id}, object_id={obj_id_fmt}) -- timestamp ordering violation");
                     return Err(Abort::OrderViolation)
+                }
+                Err(RWFailure::AbortedNotFound) => {
+                    trace!("ABORT read(id={id}, object_id={object_id:?}) -- SPECIAL CASE WHERE OBJECT EXISTS BC OF NEWER TRANSACTION");
+                    return Err(Abort::ObjectNotFound)
                 },
                 Err(RWFailure::WaitFor(waiting_on)) => {
                     drop(guard);
@@ -291,12 +296,12 @@ where
 
 #[cfg(test)]
 mod test {
-    use crate::{BalanceDiff, sharding::{transaction_id::*}};
     use tokio::{task::JoinHandle, time::sleep};
+    use crate::sharding::{transaction_id::*};
     use std::time::{Duration, Instant};
     use super::*;
 
-    async fn verify_commit(shard: &Arc<Shard<i32, i64, BalanceDiff>>, id: &TransactionId, expected: Vec<(i32, i64)>) {
+    async fn verify_commit(shard: &Arc<Shard<i32, i64>>, id: &TransactionId, expected: Vec<(i32, i64)>) {
         assert!(shard.check_commit(&id).await.is_ok());
         let commit_res = shard.commit(&id).await;
         assert!(commit_res.is_ok());
@@ -305,20 +310,20 @@ mod test {
 
     #[test_log::test(tokio::test(flavor="multi_thread", worker_threads=2))]
     async fn test_basic_write_stall() {
-        let shard: Arc<Shard<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
+        let shard: Arc<Shard<i32, i64>> = Arc::new(Shard::new('A'));
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
 
         // Perform 2 consecutive writes from different transactions
-        assert!(shard.write(&tx1, 1, BalanceDiff(10)).await.is_ok());
-        assert!(shard.write(&tx2, 1, BalanceDiff(20)).await.is_ok());
+        assert!(shard.write(&tx1, 1, 10).await.is_ok());
+        assert!(shard.write(&tx2, 1, 20).await.is_ok());
 
         let shard_clone2 = shard.clone();
         let join_tx2: JoinHandle<Instant> = tokio::spawn(async move {
             // Try to commit the newer transaction first. It should wait for the
             // second older transaction to commit, then will commit sucessfully.
-            verify_commit(&shard_clone2, &tx2, vec![(1, 30)]).await;
+            verify_commit(&shard_clone2, &tx2, vec![(1, 20)]).await;
             Instant::now()
         });
 
@@ -336,18 +341,22 @@ mod test {
 
     #[test_log::test(tokio::test(flavor="multi_thread", worker_threads=2))]
     async fn test_aborted_write_stall() {
-        let shard: Arc<Shard<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
+        let shard: Arc<Shard<i32, i64>> = Arc::new(Shard::new('A'));
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
 
         // Write an initial value that will be accepted
-        assert!(shard.write(&tx1, 1, BalanceDiff(1)).await.is_ok());
-        assert!(shard.write(&tx1, 1, BalanceDiff(-10)).await.is_ok());
-        assert!(shard.write(&tx2, 1, BalanceDiff(20)).await.is_ok());
+        assert!(shard.write(&tx1, 1, 1).await.is_ok());
+        assert!(shard.write(&tx1, 1, -10).await.is_ok());
 
         let shard_clone2 = shard.clone();
         let join_tx2: JoinHandle<Instant> = tokio::spawn(async move {
+            let read_result = shard_clone2.read(&tx2, &1).await;
+            assert!(read_result.is_err());
+            assert_eq!(read_result.unwrap_err(), Abort::ObjectNotFound);
+            assert!(shard_clone2.write(&tx2, 1, 20).await.is_ok());
+
             verify_commit(&shard_clone2, &tx2, vec![(1, 20)]).await;
             Instant::now()
         });
@@ -365,12 +374,12 @@ mod test {
 
     #[test_log::test(tokio::test(flavor="multi_thread", worker_threads=2))]
     async fn test_aborted_initial_invalid_write() {
-        let shard: Arc<Shard<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
+        let shard: Arc<Shard<i32, i64>> = Arc::new(Shard::new('A'));
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx = id_gen.next();
 
         // Ensure that an invalid write will not create an object
-        let write_res = shard.write(&tx, 1, BalanceDiff(-10)).await;
+        let write_res = shard.write(&tx, 1, -10).await;
         assert!(write_res.is_err());
         assert_eq!(write_res.unwrap_err(), Abort::ObjectNotFound);
 
@@ -380,16 +389,16 @@ mod test {
 
     #[test_log::test(tokio::test(flavor="multi_thread", worker_threads=2))]
     async fn test_read_after_non_committed_write() {
-        let shard: Arc<Shard<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
+        let shard: Arc<Shard<i32, i64>> = Arc::new(Shard::new('A'));
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
         let tx3 = id_gen.next();
 
-        assert!(shard.write(&tx1, 1, BalanceDiff(10)).await.is_ok());
+        assert!(shard.write(&tx1, 1, 10).await.is_ok());
         verify_commit(&shard, &tx1, vec![(1, 10)]).await;
 
-        assert!(shard.write(&tx2, 1, BalanceDiff(20)).await.is_ok());
+        assert!(shard.write(&tx2, 1, 30).await.is_ok());
 
         let shard_clone3 = shard.clone();
         let join_tx3: JoinHandle<Instant> = tokio::spawn(async move {
@@ -412,16 +421,16 @@ mod test {
 
     #[test_log::test(tokio::test(flavor="multi_thread", worker_threads=2))]
     async fn test_read_after_aborted_write() {
-        let shard: Arc<Shard<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
+        let shard: Arc<Shard<i32, i64>> = Arc::new(Shard::new('A'));
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
 
         // Write an initial value that will be accepted
-        assert!(shard.write(&tx1, 1, BalanceDiff(1)).await.is_ok());
+        assert!(shard.write(&tx1, 1, 1).await.is_ok());
 
         // Perform a write that will fail upon commit
-        assert!(shard.write(&tx1, 1, BalanceDiff(-10)).await.is_ok());
+        assert!(shard.write(&tx1, 1, -10).await.is_ok());
 
         let shard_clone1 = shard.clone();
         let join_tx1: JoinHandle<Instant> = tokio::spawn(async move {
@@ -458,17 +467,17 @@ mod test {
     
     #[test_log::test(tokio::test(flavor="multi_thread", worker_threads=2))]
     async fn test_write_after_aborted_write_and_read() {
-        let shard: Arc<Shard<i32, i64, BalanceDiff>> = Arc::new(Shard::new('A'));
+        let shard: Arc<Shard<i32, i64>> = Arc::new(Shard::new('A'));
         let mut id_gen = TransactionIdGenerator::new('B');
         let tx1 = id_gen.next();
         let tx2 = id_gen.next();
         let tx3 = id_gen.next();
 
         // Write an initial value that will be accepted
-        assert!(shard.write(&tx1, 1, BalanceDiff(1)).await.is_ok());
+        assert!(shard.write(&tx1, 1, 1).await.is_ok());
 
         // Write a value that will be rejected at the consistency check
-        assert!(shard.write(&tx1, 1, BalanceDiff(-20)).await.is_ok());
+        assert!(shard.write(&tx1, 1, -20).await.is_ok());
 
         let shard_clone2 = shard.clone();
         let join_tx2 = tokio::spawn(async move {
@@ -478,7 +487,7 @@ mod test {
             // aborted since no other older transactions have written. 
             let read_res = shard_clone2.read(&tx2, &1).await;
             assert!(read_res.is_err());
-            assert_eq!(read_res.unwrap_err(), Abort::OrderViolation);
+            assert_eq!(read_res.unwrap_err(), Abort::ObjectNotFound);
             assert!(shard_clone2.abort(&tx1).await.is_ok());
 
             Instant::now()
@@ -486,7 +495,7 @@ mod test {
 
         // A newer transaction than the read should be able to write to the 
         // object despite the earlier aborted transactions
-        assert!(shard.write(&tx3, 1, BalanceDiff(10)).await.is_ok());
+        assert!(shard.write(&tx3, 1, 10).await.is_ok());
 
         // Try to commit then abort the oldest transaction since it fails the 
         // consistency check upon attempting to commit

@@ -4,7 +4,7 @@ mod client;
 use crate::{
     sharding::{Shard, Abort, CommitSuccess, TransactionIdGenerator, TransactionId}, 
     pool::server::{ServerStateMessage, ServerStateMessageType},
-    pool::{ConnectionPoolBuilder, ServerGroup}, BalanceDiff
+    pool::{ConnectionPoolBuilder, ServerGroup}
 };
 use tx_common::{Amount, ClientRequest, ClientResponse, config::{NodeId, Config}};
 use tokio::{sync::mpsc::*, select, net::TcpListener};
@@ -13,7 +13,7 @@ use log::{error, info, trace};
 use client::Client;
 use protocol::*;
 
-type AtomicShard = Arc<Shard<String, Amount, BalanceDiff>>;
+type AtomicShard = Arc<Shard<String, Amount>>;
 
 pub struct Server {
     node_id: NodeId,
@@ -165,9 +165,18 @@ impl Server {
         tokio::spawn(async move {
             let fwd_resp: Forwarded = match request {
                 ClientRequest::WriteBalance(account_id, diff) => {
-                    let resp = match shard.write(&tx_id, account_id, diff).await {
-                        Ok(_) => ClientResponse::Ok,
-                        Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,
+                    let resp = match shard.read(&tx_id, &account_id).await {
+                        Ok(balance) => match shard.write(&tx_id, account_id, balance + diff.0).await {
+                            Ok(_) => ClientResponse::Ok,
+                            Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,
+                            Err(_) => ClientResponse::Aborted
+                        },
+                        Err(Abort::ObjectNotFound) => 
+                            match shard.write(&tx_id, account_id, diff.0).await {
+                                Ok(_) => ClientResponse::Ok,
+                                Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,
+                                Err(_) => ClientResponse::Aborted
+                            }
                         Err(_) => ClientResponse::Aborted
                     };
 
