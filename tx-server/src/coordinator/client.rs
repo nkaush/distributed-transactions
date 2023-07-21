@@ -89,15 +89,6 @@ impl Client {
                         Err(_) => ClientResponse::Aborted
                     },
                     Err(Abort::ObjectNotFound) => 
-                        // if diff.0 < 0 {
-                        //     ClientResponse::AbortedNotFound
-                        // } else {
-                        //     match self.shard.write(&self.transaction_id, account_id, diff.0).await {
-                        //         Ok(_) => ClientResponse::Ok,
-                        //         Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,
-                        //         Err(_) => ClientResponse::Aborted
-                        //     }
-                        // }
                         match self.shard.write(&self.transaction_id, account_id, diff.0).await {
                             Ok(_) => ClientResponse::Ok,
                             Err(Abort::ObjectNotFound) => ClientResponse::AbortedNotFound,
